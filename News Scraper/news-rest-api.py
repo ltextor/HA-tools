@@ -68,7 +68,7 @@ def get_first_rss_article_content():
         article_response = requests.get(article_url, timeout=30)
         article_response.raise_for_status()
         
-        soup = BeautifulSoup(article_response.content, 'html.parser')
+        soup = BeautifulSoup(article_response.content, "lxml")
         
         # Remove script and style elements
         for script in soup(["script", "style"]):
