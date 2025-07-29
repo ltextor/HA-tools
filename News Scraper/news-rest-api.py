@@ -22,7 +22,8 @@ def get_first_rss_article_content():
     
     except Exception as e:
         error_msg = f"Error: {e}"
-        return error_msg
+        print error_msg
+        return ""
 
 # REST server
 
