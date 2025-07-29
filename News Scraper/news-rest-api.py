@@ -18,7 +18,7 @@ def get_first_rss_article_content():
         soup = BeautifulSoup(article_response.content, "lxml")
         article_elements = soup.find_all(class_='ArticleElement_article-element__q93eL')
         content = "\n".join([element.get_text() for element in article_elements])
-        return {"news": content}
+        return content
     
     except Exception as e:
         error_msg = f"Error: {e}"
@@ -39,7 +39,7 @@ def get_personalized_text(name: str):
 
 @app.get("/api/dailynews")
 def get_dailynews():
-    return get_first_rss_article_content()
+    return {"news": get_first_rss_article_content()}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
