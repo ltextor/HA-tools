@@ -12,6 +12,8 @@ def get_first_rss_article_content():
     try:
         # Scrape article content
         article_url = "https://www.tagesanzeiger.ch/28-juli-2025-das-wichtigste-des-tages-677287671830"
+        if article_url == "https://www.tagesanzeiger.ch":
+            return ""
         article_response = requests.get(article_url, timeout=30)
         article_response.raise_for_status()
         # get text content
