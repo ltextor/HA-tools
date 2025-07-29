@@ -29,13 +29,13 @@ def get_first_rss_article_content():
 
 app = FastAPI()
 
-@app.get("/api/text")
+@app.get("/api/version")
 def get_text():
-    return {"message": "Hello from FastAPI!"}
+    return {"version": "v1.0"}
 
-@app.get("/api/text/{name}")
-def get_personalized_text(name: str):
-    return {"message": f"Hello, {name}!"}
+#@app.get("/api/text/{name}")
+#def get_personalized_text(name: str):
+#    return {"message": f"Hello, {name}!"}
 
 @app.get("/api/dailynews")
 def get_dailynews():
