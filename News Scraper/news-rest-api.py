@@ -5,6 +5,9 @@ from bs4 import BeautifulSoup
 import re
 
 rss_feed_url = "https://partner-feeds.publishing.tamedia.ch/rss/tagesanzeiger/news-heute"  # Example RSS feed URL
+article_title = ""
+article_date = ""
+article_content = ""
 
 # scrape website
 
@@ -24,7 +27,7 @@ def get_rss_article_content():
         article_url = soup.guid.text
         #article_url = soup.find_all('link')[2].text   # get third link from RSS feed
         article_title = soup.find_all('description')[1].text
-        article_date = "TBD"
+        article_date = soup.pubDate.text
         print(f"Found article URL: {article_url}")
         # scrape article content
         print(f"Scraping article from {article_url}")
@@ -33,7 +36,7 @@ def get_rss_article_content():
         # get text content
         soup = BeautifulSoup(article_response.content, "lxml")
         article_elements = soup.find_all(class_='ArticleElement_article-element__q93eL')
-        article.content = "\n".join([element.get_text() for element in article_elements])
+        article_content = "\n".join([element.get_text() for element in article_elements])
         return {"title": article_title, "date": article_date, "news": article_content}
     
     except Exception as e:
