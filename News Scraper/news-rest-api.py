@@ -13,6 +13,7 @@ article_date = ""
 article_content = ""
 
 gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))  # set Google Maps API key in the environment variable
+origin_address = "YOUR_ADDRESS"                                  # replace with your address
 
 # ---
 # scrape website
@@ -54,36 +55,42 @@ def get_rss_article_content():
 # get traffic info
 
 def get_traffic_info(destination):
-    #start = datetime.now() + timedelta(minutes=30)  # 30 minutes from now
-    start = datetime.now()  # current time
-    directions_result = gmaps.directions("YOUR_ADDRESS",  # replace with your address
-                                     destination,
-                                     mode="driving",
-                                     language="de",
-                                     units="metric",
-                                     traffic_model="best_guess",
-                                     departure_time=start)
-    leg = directions_result[0]['legs'][0]
-    route = leg['start_address'] + " nach " + leg['end_address']
-    duration = leg['duration']['text']
-    duration_in_traffic = leg['duration_in_traffic']['text']
-    delay_ratio = leg['duration_in_traffic']['value'] / leg['duration']['value']
-    if delay_ratio < 1.1:
-        traffic = "Wenig Verkehr"
-    elif delay_ratio < 1.3:
-        traffic = "Mässig Verkehr"
-    elif delay_ratio < 1.5:
-        traffic = "Viel Verkehr"
-    else:
-        traffic = "Sehr viel Verkehr"
-    print(f"Route: {route}, Duration: {duration}, Duration in traffic: {duration_in_traffic}, Traffic: {traffic}")
-    return {
-        "route": route,
-        "duration": duration,
-        "duration_in_traffic": duration_in_traffic,
-        "traffic": traffic
-    }
-
+    try:
+        #start = datetime.now() + timedelta(minutes=30)  # 30 minutes from now
+        start = datetime.now()  # current time
+        directions_result = gmaps.directions(origin_address,
+                                        destination,
+                                        mode="driving",
+                                        language="de",
+                                        units="metric",
+                                        traffic_model="best_guess",
+                                        departure_time=start)
+        leg = directions_result[0]['legs'][0]
+        route = leg['start_address'] + " nach " + leg['end_address']
+        duration = leg['duration']['text']
+        duration_in_traffic = leg['duration_in_traffic']['text']
+        delay_ratio = leg['duration_in_traffic']['value'] / leg['duration']['value']
+        if delay_ratio < 1.1:
+            traffic = "Wenig Verkehr"
+        elif delay_ratio < 1.3:
+            traffic = "Mässig Verkehr"
+        elif delay_ratio < 1.5:
+            traffic = "Viel Verkehr"
+        else:
+            traffic = "Sehr viel Verkehr"
+        print(f"Route: {route}, Duration: {duration}, Duration in traffic: {duration_in_traffic}, Traffic: {traffic}")
+        return {
+            "route": route,
+            "duration": duration,
+            "duration_in_traffic": duration_in_traffic,
+            "traffic": traffic
+        }
+    
+    except Exception as e:
+        error_msg = f"Error: {e}"
+        print(error_msg)
+        return error_msg
+    
 # ---
 # REST server
 
