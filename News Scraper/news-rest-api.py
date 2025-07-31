@@ -2,13 +2,19 @@ from fastapi import FastAPI
 import uvicorn
 import requests
 from bs4 import BeautifulSoup
-import re
+import googlemaps
+#from datetime import datetime, timedelta
+from datetime import datetime
+import os
 
 rss_feed_url = "https://partner-feeds.publishing.tamedia.ch/rss/tagesanzeiger/news-heute"  # Example RSS feed URL
 article_title = ""
 article_date = ""
 article_content = ""
 
+gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))  # set Google Maps API key in the environment variable
+
+# ---
 # scrape website
 
 def get_rss_article_content():
@@ -44,21 +50,56 @@ def get_rss_article_content():
         print(error_msg)
         return error_msg
 
+# ---
+# get traffic info
+
+def get_traffic_info(destination):
+    #start = datetime.now() + timedelta(minutes=30)  # 30 minutes from now
+    start = datetime.now()  # current time
+    directions_result = gmaps.directions("YOUR_ADDRESS",  # replace with your address
+                                     destination,
+                                     mode="driving",
+                                     language="de",
+                                     units="metric",
+                                     traffic_model="best_guess",
+                                     departure_time=start)
+    leg = directions_result[0]['legs'][0]
+    route = leg['start_address'] + " nach " + leg['end_address']
+    duration = leg['duration']['text']
+    duration_in_traffic = leg['duration_in_traffic']['text']
+    delay_ratio = leg['duration_in_traffic']['value'] / leg['duration']['value']
+    if delay_ratio < 1.1:
+        traffic = "Wenig Verkehr"
+    elif delay_ratio < 1.3:
+        traffic = "Mässig Verkehr"
+    elif delay_ratio < 1.5:
+        traffic = "Viel Verkehr"
+    else:
+        traffic = "Sehr viel Verkehr"
+    print(f"Route: {route}, Duration: {duration}, Duration in traffic: {duration_in_traffic}, Traffic: {traffic}")
+    return {
+        "route": route,
+        "duration": duration,
+        "duration_in_traffic": duration_in_traffic,
+        "traffic": traffic
+    }
+
+# ---
 # REST server
 
 app = FastAPI()
 
 @app.get("/api/version")
 def get_text():
-    return {"version": "v1.1"}
-
-#@app.get("/api/text/{name}")
-#def get_personalized_text(name: str):
-#    return {"message": f"Hello, {name}!"}
+    return {"version": "v2.0"}
 
 @app.get("/api/dailynews")
 def get_dailynews():
     return get_rss_article_content()
+
+@app.get("/api/trafficinfo/{destination}")
+def get_personalized_text(destination: str):
+    return get_traffic_info(destination)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
