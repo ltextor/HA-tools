@@ -6,14 +6,20 @@ import googlemaps
 #from datetime import datetime, timedelta
 from datetime import datetime
 import os
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+import atexit
+from dotenv import load_dotenv
 
-rss_feed_url = "https://partner-feeds.publishing.tamedia.ch/rss/tagesanzeiger/news-heute"  # Example RSS feed URL
+load_dotenv(override=False)                                      # Load .env file, but do not override existing environment variables
+
+rss_feed_url = os.getenv('RSS_URL')                              # set your RSS URL in the environment variable or .env file
 article_title = ""
 article_date = ""
 article_content = ""
 
-gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))  # set Google Maps API key in the environment variable
-origin_address = "YOUR_ADDRESS"                                  # replace with your address
+gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))  # set Google Maps API key in the environment variable or .env file
+origin_address = os.getenv('ORIGIN_ADDRESS')                     # set your address in the environment variable or .env file
 
 # ---
 # scrape website
@@ -49,7 +55,7 @@ def get_rss_article_content():
     except Exception as e:
         error_msg = f"Error: {e}"
         print(error_msg)
-        return error_msg
+        return {"error": error_msg}
 
 # ---
 # get traffic info
@@ -89,7 +95,24 @@ def get_traffic_info(destination):
     except Exception as e:
         error_msg = f"Error: {e}"
         print(error_msg)
-        return error_msg
+        return {"error": error_msg}
+    
+# ---
+# fetch news when the url is available (url appears around 5 pm and disappears around 11 pm)
+
+def scheduled_news_fetch():
+    print(f"Scheduled news fetch at {datetime.now()}")
+    get_rss_article_content()
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    func=scheduled_news_fetch,
+    trigger=CronTrigger(hour=17, minute=30, day_of_week='0-4'),   # Monday to Friday 5.30 pm
+    id='daily_news_fetch',
+    replace_existing=True
+)
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
     
 # ---
 # REST server
@@ -97,7 +120,7 @@ def get_traffic_info(destination):
 app = FastAPI()
 
 @app.get("/api/version")
-def get_text():
+def get_version():
     return {"version": "v2.0"}
 
 @app.get("/api/dailynews")
@@ -105,7 +128,9 @@ def get_dailynews():
     return get_rss_article_content()
 
 @app.get("/api/trafficinfo/{destination}")
-def get_personalized_text(destination: str):
+def get_traffic_for_destination(destination: str):
+    if not destination.strip():
+        return {"error": "Destination cannot be empty"}
     return get_traffic_info(destination)
 
 if __name__ == "__main__":
