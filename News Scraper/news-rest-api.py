@@ -148,7 +148,7 @@ app = FastAPI()
 
 @app.get("/api/version")
 def get_version():
-    return {"version": "v2.0"}
+    return {"version": "v2.1"}
 
 @app.get("/api/dailynews")
 def get_dailynews():
