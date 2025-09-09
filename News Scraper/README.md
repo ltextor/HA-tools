@@ -1,3 +1,8 @@
+Script which sets up a rest api with:
+- /api/dailynews > daily news
+- /api/funfact > random fun fact
+- /api/trafficinfo/destination > duration and traffic to destination
+
 Build and start container with
 ```
 $ sudo docker build -t news_scraper .

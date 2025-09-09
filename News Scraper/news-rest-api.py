@@ -10,6 +10,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import atexit
 from dotenv import load_dotenv
+import json
+import random
 
 load_dotenv(override=False)                                      # Load .env file, but do not override existing environment variables
 
@@ -17,6 +19,8 @@ rss_feed_url = os.getenv('RSS_URL')                              # set your RSS 
 article_title = ""
 article_date = ""
 article_content = ""
+
+fun_facts = []
 
 gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))  # set Google Maps API key in the environment variable or .env file
 origin_address = os.getenv('ORIGIN_ADDRESS')                     # set your address in the environment variable or .env file
@@ -52,6 +56,29 @@ def get_rss_article_content():
         article_content = "\n".join([element.get_text() for element in article_elements])
         return {"title": article_title, "date": article_date, "news": article_content}
     
+    except Exception as e:
+        error_msg = f"Error: {e}"
+        print(error_msg)
+        return {"error": error_msg}
+
+# ---
+# get random fun fact
+
+def get_fun_fact():
+    global fun_facts
+    try:
+        if not len(fun_facts):
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fun_facts.json'), 'r', encoding='utf-8') as f:
+                fun_facts = json.load(f)
+
+        fun_fact = random.choice(fun_facts)
+        fun_facts.remove(fun_fact)
+        print(f"Selected fun fact: {fun_fact}")
+        return json.dumps(fun_fact, ensure_ascii=False, indent=2)
+    
+    #except FileNotFoundError:
+    #    print("File 'fun_facts.json' not found")
+    #    return {"error": "File 'fun_facts.json' not found"}
     except Exception as e:
         error_msg = f"Error: {e}"
         print(error_msg)
@@ -126,6 +153,10 @@ def get_version():
 @app.get("/api/dailynews")
 def get_dailynews():
     return get_rss_article_content()
+
+@app.get("/api/funfact")
+def get_funfact_endpoint():
+    return get_fun_fact()
 
 @app.get("/api/trafficinfo/{destination}")
 def get_traffic_for_destination(destination: str):
