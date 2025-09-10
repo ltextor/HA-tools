@@ -70,10 +70,12 @@ def get_fun_fact():
         if not len(fun_facts):
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fun_facts.json'), 'r', encoding='utf-8') as f:
                 fun_facts = json.load(f)
+            print(f"Loaded {len(fun_facts)} fun facts from file.")
 
         fun_fact = random.choice(fun_facts)
         fun_facts.remove(fun_fact)
         print(f"Selected fun fact: {fun_fact}")
+        print(f"Remaining fun facts: {len(fun_facts)}")
         return json.dumps(fun_fact, ensure_ascii=False, indent=2)
     
     #except FileNotFoundError:
@@ -148,7 +150,7 @@ app = FastAPI()
 
 @app.get("/api/version")
 def get_version():
-    return {"version": "v2.1"}
+    return {"version": "v2.2"}
 
 @app.get("/api/dailynews")
 def get_dailynews():
