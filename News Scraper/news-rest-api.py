@@ -76,7 +76,7 @@ def get_fun_fact():
         fun_facts.remove(fun_fact)
         print(f"Selected fun fact: {fun_fact}")
         print(f"Remaining fun facts: {len(fun_facts)}")
-        return json.dumps(fun_fact, ensure_ascii=False, indent=2)
+        return fun_fact
     
     #except FileNotFoundError:
     #    print("File 'fun_facts.json' not found")
@@ -150,7 +150,7 @@ app = FastAPI()
 
 @app.get("/api/version")
 def get_version():
-    return {"version": "v2.2"}
+    return {"version": "v2.3"}
 
 @app.get("/api/dailynews")
 def get_dailynews():
