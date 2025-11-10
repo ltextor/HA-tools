@@ -1,0 +1,760 @@
+# NFC Jukebox Advanced ESPHome Configuration
+# by ltextor
+
+esphome:
+  name: nfc-jukebox-advanced
+  friendly_name: NFC Jukebox Advanced
+  on_boot:
+    then:
+      - pcf8563.read_time:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 80%
+  platformio_options:
+    board_build.flash_mode: dio
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Nfc-Jukebox-Advanced"
+    password: "YOUR_FALLBACK_PASSWORD_HERE"
+
+captive_portal:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "YOUR_KEY_HERE"
+  on_client_connected:
+    - if:
+        condition:
+          lambda: 'return (0 == client_info.find("Home Assistant "));'
+        then:
+          - lvgl.widget.show: label_hastatus
+  on_client_disconnected:
+    - if:
+        condition:
+          lambda: 'return (0 == client_info.find("Home Assistant "));'
+        then:
+          - lvgl.widget.hide: label_hastatus
+  actions:
+    # debugging action to test rtttl
+    - action: rtttl_play
+      variables:
+        song_str: string
+      then:
+        - rtttl.play:
+            rtttl: !lambda 'return song_str;'
+
+ota:
+  - platform: esphome
+    password: "YOUR_OTA_PASSWORD_HERE"
+
+logger:
+
+i2c:
+  - id: internal_i2c
+    sda: GPIO11
+    scl: GPIO12
+
+rc522_i2c:
+  # internal RFID reader
+  id: nfc_reader_internal
+  i2c_id: internal_i2c
+  address: 0x28
+  #on_tag:
+  #  then:
+  #    - homeassistant.tag_scanned: !lambda 'return x;'
+
+pn532_spi:
+  # external RFID reader
+  id: nfc_reader_external
+  spi_id: external_spi
+  cs_pin: GPIO1
+  update_interval: 1s
+  on_tag:
+    then:
+      #- homeassistant.tag_scanned: !lambda return x;
+      - text_sensor.template.publish:
+          id: rfid_spotify_uri
+          state: !lambda |
+            if (!tag.has_ndef_message()) {
+              return "";
+            }
+            auto message = tag.get_ndef_message();
+            auto records = message->get_records();
+            return records[0]->get_payload();
+      - text_sensor.template.publish:
+          id: rfid_shuffle
+          state: !lambda |
+            if (!tag.has_ndef_message()) {
+              return "";
+            }
+            auto message = tag.get_ndef_message();
+            auto records = message->get_records();
+            if (records.size() < 2) {
+              return "";
+            }
+            return records[1]->get_payload();
+      - text_sensor.template.publish:
+          id: rfid_artist_playlist
+          state: !lambda |
+            if (!tag.has_ndef_message()) {
+              return "";
+            }
+            auto message = tag.get_ndef_message();
+            auto records = message->get_records();
+            if (records.size() < 3) {
+              return "";
+            }
+            return records[2]->get_payload();
+      - rtttl.play: 'scan:d=4,o=6,b=125:16c6,16e6,8g6'
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - logger.log: "LVGL resuming"
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - light.turn_on: display_backlight
+      - homeassistant.action:
+          action: media_player.join
+          data:
+            entity_id: media_player.wohnzimmer
+            group_members: media_player.lounge
+      - homeassistant.action:
+          action: media_player.shuffle_set
+          data:
+            entity_id: media_player.wohnzimmer
+            shuffle: !lambda |-
+              if (0 == id(rfid_shuffle).state.compare(std::string{"shuffle"})) {
+                  return true;
+              } else {
+                  return false;
+              }
+      - homeassistant.action:
+        # to do: check if URI is not blank
+          action: media_player.play_media
+          data:
+            entity_id: media_player.wohnzimmer
+            media_content_id: !lambda return id(rfid_spotify_uri).state;
+            media_content_type: music
+  on_tag_removed:
+    then:
+      #- homeassistant.event: 
+      #    event: esphome.tag_released
+      - text_sensor.template.publish:
+          id: rfid_spotify_uri
+          state: ""
+      - text_sensor.template.publish:
+          id: rfid_shuffle
+          state: ""
+      - text_sensor.template.publish:
+          id: rfid_artist_playlist
+          state: ""
+      - rtttl.play: 'release:d=4,o=6,b=125:16g6,16e6,8c6'
+      - homeassistant.action:
+          action: media_player.media_pause
+          data:
+            entity_id: media_player.wohnzimmer
+
+output:
+  - platform: ledc
+    pin: GPIO3
+    id: buzzer
+  - platform: ledc
+    pin: GPIO9
+    id: backlight_output
+
+rtttl:
+  output: buzzer
+  gain: 60%
+
+time:
+  # RTC
+  - platform: pcf8563
+    id: rtctime
+    i2c_id: internal_i2c
+    address: 0x51
+    update_interval: never
+  - platform: homeassistant
+    id: esptime
+    on_time_sync:
+      then:
+        - pcf8563.write_time:
+
+spi:
+  - id: internal_spi
+    clk_pin: GPIO6
+    mosi_pin: GPIO5
+    interface: hardware
+  - id: external_spi
+    clk_pin: GPIO2
+    mosi_pin: GPIO15
+    miso_pin: GPIO13
+    interface: any
+
+display:
+  - platform: ili9xxx
+    id: round_display
+    model: GC9A01A
+    spi_id: internal_spi
+    cs_pin: GPIO7
+    reset_pin: GPIO8
+    dc_pin: GPIO4
+    invert_colors: true
+    auto_clear_enabled: false
+    update_interval: never
+
+touchscreen:
+  - platform: ft5x06
+    id: touch
+    i2c_id: internal_i2c
+    address: 0x38
+    # interrupt_pin: GPIO14  # not supported by this component
+    on_release:
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - logger.log: "LVGL resuming"
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - light.turn_on: display_backlight
+
+light:
+  - platform: monochromatic
+    name: "Backlight"
+    output: backlight_output
+    id: display_backlight
+    default_transition_length: 0s
+    initial_state:
+      state: ON
+      brightness: 80%
+    restore_mode: ALWAYS_ON
+
+button:
+  - platform: restart
+    name: "NFC Jukebox Restart"
+
+binary_sensor:
+  # buttons
+  - platform: gpio
+    name: Button
+    id: front_button
+    pin:
+      number: GPIO42
+      inverted: true
+    on_click: 
+      then:
+        - homeassistant.action:
+            action: media_player.media_play_pause
+            data:
+              entity_id: media_player.wohnzimmer
+  - platform: gpio
+    name: Hold Button
+    pin: GPIO46
+  # media player sensors
+  - platform: homeassistant
+    id: media_player_shuffle
+    publish_initial_state: true
+    entity_id: media_player.wohnzimmer
+    attribute: shuffle
+    on_state: 
+      - lvgl.widget.update:
+          id: button_shuffle
+          state:
+            checked: !lambda return x;
+  - platform: template
+    id: media_player_kitchen
+    on_state: 
+      - lvgl.widget.update:
+          id: button_kitchen
+          state:
+            checked: !lambda return x;
+  - platform: template
+    id: media_player_bathroom
+    on_state: 
+      - lvgl.widget.update:
+          id: button_bathroom
+          state:
+            checked: !lambda return x;
+  # device status
+  - platform: status
+    name: "NFC Jukebox Status"
+
+sensor:
+  # rotary encoder
+  - platform: rotary_encoder
+    id: volume_encoder
+    pin_a: GPIO40
+    pin_b: GPIO41
+    min_value: 0
+    max_value: 20 # increase/decrease volume by steps of 5%
+    on_value:
+    # to do > reset inactivity counter
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - logger.log: "LVGL resuming"
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - light.turn_on: display_backlight
+      - script.execute: volume_script
+      - lvgl.arc.update:
+          id: arc_volume_adjust
+          value: !lambda return (x * 5);
+      - lvgl.label.update:
+          id: label_volume_adjust
+          text: !lambda return to_string(int(x) * 5) + "%";
+  # media player sensors
+  - platform: homeassistant
+    id: wohnzimmer_volume
+    entity_id: media_player.wohnzimmer
+    attribute: volume_level
+    on_value:
+      - sensor.rotary_encoder.set_value:
+          id: volume_encoder
+          value: !lambda return (x * 20);
+      - lvgl.arc.update:
+          id:
+            - arc_volume
+            - arc_volume_adjust
+          value: !lambda return (x * 100);
+      - lvgl.label.update:
+          id: label_volume_adjust
+          text: !lambda return to_string(int(x * 100)) + "%";
+      - homeassistant.action:
+          action: media_player.volume_set
+          data:
+            entity_id: media_player.lounge
+            volume_level: !lambda return x;
+      - if:
+          condition:
+            - binary_sensor.is_on: media_player_kitchen
+          then:
+            - homeassistant.action:
+                action: media_player.volume_set
+                data:
+                  entity_id: media_player.kuche
+                  volume_level: !lambda return x;
+      - if:
+          condition:
+            - binary_sensor.is_on: media_player_bathroom
+          then:
+            - homeassistant.action:
+                action: media_player.volume_set
+                data:
+                  entity_id: media_player.badezimmer
+                  volume_level: !lambda return x;
+  # wifi sensors
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+    entity_category: "diagnostic"
+    device_class: ""
+    icon: "mdi:wifi"
+
+text_sensor:
+  # RFID sensors
+  - platform: template
+    name: "RFID Spotify URI"
+    id: rfid_spotify_uri
+  - platform: template
+    name: "RFID Shuffle"
+    id: rfid_shuffle
+  - platform: template
+    name: "RFID Artist/Playlist"
+    id: rfid_artist_playlist
+  # media player sensors
+  - platform: homeassistant
+    id: media_player_state
+    entity_id: media_player.wohnzimmer
+    on_value:
+      - lvgl.widget.update:
+          id: button_play
+          state:
+            checked: !lambda return (0 == x.compare(std::string{"playing"}));
+      - lvgl.label.update:
+          id: label_button_play
+          text: !lambda |-
+            static char buf[6];
+            std::string icon;
+            if (0 == x.compare(std::string{"playing"})) {
+                icon = "\uE034";
+            } else {
+                icon = "\uE037";
+            }
+            snprintf(buf, sizeof(buf), "%s", icon.c_str());
+            return buf;
+  - platform: homeassistant
+    id: media_player_group_members
+    entity_id: media_player.wohnzimmer
+    attribute: group_members
+    on_value:
+      - if:
+          condition: 
+            lambda: |-
+              std::string str(x);
+              return (str.find("media_player.kuche") != std::string::npos);
+          then:
+            - binary_sensor.template.publish:
+                id: media_player_kitchen
+                state: ON
+          else:
+            - binary_sensor.template.publish:
+                id: media_player_kitchen
+                state: OFF
+      - if:
+          condition: 
+            lambda: |-
+              std::string str(x);
+              return (str.find("media_player.badezimmer") != std::string::npos);
+          then:
+            - binary_sensor.template.publish:
+                id: media_player_bathroom
+                state: ON
+          else:
+            - binary_sensor.template.publish:
+                id: media_player_bathroom
+                state: OFF
+  - platform: homeassistant
+    id: media_player_artist
+    entity_id: media_player.wohnzimmer
+    attribute: media_artist
+    on_value:
+      - text_sensor.template.publish:
+          id: media_player_artist_title
+          state: !lambda return "\uE01A " + x + "   \uE405 " + id(media_player_title).state + "   ";
+  - platform: homeassistant
+    id: media_player_title
+    entity_id: media_player.wohnzimmer
+    attribute: media_title
+    on_value:
+      - text_sensor.template.publish:
+          id: media_player_artist_title
+          state: !lambda return "\uE01A " + id(media_player_artist).state + "   \uE405 " + x + "   ";
+  - platform: template
+    id: media_player_artist_title
+    update_interval: never
+    on_value:
+      - lvgl.label.update:
+          id: label_artist_title
+          text: !lambda return x;
+
+font:
+  - file:
+      type: gfonts
+      family: Material+Symbols+Outlined
+      weight: 400
+    id: symbols_20
+    size: 20
+    bpp: 4
+    ignore_missing_glyphs: true
+    glyphs: [
+      "\uE043", # Shuffle
+      "\uE56C", # Restaurant
+      "\uF061", # Shower
+      "\uE63E"  # Wifi
+      ]
+  - file:
+      type: gfonts
+      family: Material+Symbols+Outlined
+      weight: 400
+    id: symbols_40
+    size: 40
+    bpp: 4
+    ignore_missing_glyphs: true
+    glyphs: [
+      "\uE037", # Play
+      "\uE034", # Pause
+      "\uE044", # Skip Next
+      "\uE045"  # Skip Previous
+      ]
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 400
+    id: roboto_16
+    size: 16
+    bpp: 4
+    ignore_missing_glyphs: true
+    glyphsets: GF_Latin_Core
+    extras:
+      - file:
+          type: gfonts
+          family: Material+Symbols+Outlined
+          weight: 400
+        glyphs: [
+          "\uE405", # Music Note
+          "\uE01A"  # Artist
+          ]
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 100
+    id: roboto_64
+    size: 64
+    bpp: 4
+    ignore_missing_glyphs: true
+    glyphsets: GF_Latin_Core
+
+lvgl:
+  disp_bg_color: black
+  theme:
+    arc:
+      arc_color: 0x2b002b
+      arc_width: 20
+      indicator:
+        arc_color: darkmagenta
+        arc_width: 20
+    button:
+      shadow_opa: TRANSP
+      checked:
+        bg_opa: TRANSP
+        text_color: darkmagenta
+    label:
+      text_align: CENTER
+  style_definitions:
+    - id: style_button_large
+      width: 60
+      height: 60
+      radius: 30
+      text_color: white
+      text_font: symbols_40
+    - id: style_button_small
+      width: 30
+      height: 30
+      radius: 0
+      bg_opa: TRANSP
+      text_color: white
+      text_font: symbols_20
+    - id: style_label_hastatus
+      text_color: white
+      text_font: symbols_20
+    - id: style_label_artist_title
+      text_color: white
+      text_font: roboto_16
+    - id: style_label_volume_adjust
+      text_color: white
+      text_font: roboto_64
+  top_layer:
+    widgets:
+      - label:
+          text: "\uE63E"
+          id: label_hastatus
+          styles: style_label_hastatus
+          hidden: true
+          align: BOTTOM_MID
+          y: -5
+  pages:
+    - id: main_page
+      bg_opa: TRANSP
+      widgets:
+      - arc:
+          align: CENTER
+          width: 100%
+          height: 100%
+          pad_all: 10
+          id: arc_volume
+          value: 50
+          arc_rounded: true
+          adv_hittest: true
+          adjustable: false
+      - button:
+          align: CENTER
+          id: button_play
+          checkable: true
+          styles: style_button_large
+          bg_color: darkmagenta
+          checked:
+            bg_color: darkmagenta
+            bg_opa: COVER
+            text_color: white
+          widgets:
+            - label:
+                align: CENTER
+                id: label_button_play
+                text: "\uE037"
+          on_click:
+            - homeassistant.action:
+                action: media_player.media_play_pause
+                data:
+                  entity_id: media_player.wohnzimmer
+      - button:
+          align: CENTER
+          x: -55
+          id: button_previous
+          styles: style_button_large
+          bg_opa: TRANSP
+          widgets:
+            - label:
+                align: CENTER
+                id: label_button_previous
+                text: "\uE045"
+          on_click:
+            - homeassistant.action:
+                action: media_player.media_previous_track
+                data:
+                  entity_id: media_player.wohnzimmer
+      - button:
+          align: CENTER
+          x: 55
+          id: button_next
+          styles: style_button_large
+          bg_opa: TRANSP
+          widgets:
+            - label:
+                align: CENTER
+                id: label_button_next
+                text: "\uE044"
+          on_click:
+            - homeassistant.action:
+                action: media_player.media_next_track
+                data:
+                  entity_id: media_player.wohnzimmer
+      - button:
+          align: CENTER
+          x: -35
+          y: 60
+          id: button_shuffle
+          checkable: true
+          styles: style_button_small
+          widgets:
+            - label:
+                align: CENTER
+                id: label_shuffle
+                text: "\uE043"
+          on_click:
+            - homeassistant.action:
+                action: media_player.shuffle_set
+                data:
+                  entity_id: media_player.wohnzimmer
+                  shuffle: !lambda return x;
+      - button:
+          align: CENTER
+          y: 60
+          id: button_kitchen
+          checkable: true
+          styles: style_button_small
+          widgets:
+            - label:
+                align: CENTER
+                id: label_kitchen
+                text: "\uE56C"
+          on_click:
+            - if:
+                condition:
+                  lambda: return x;
+                then:
+                  - homeassistant.action:
+                      action: media_player.volume_set
+                      data:
+                        entity_id: media_player.kuche
+                        volume_level: !lambda return id(wohnzimmer_volume).state;
+                  - homeassistant.action:
+                      action: media_player.join
+                      data:
+                        entity_id: media_player.wohnzimmer
+                        group_members: media_player.kuche
+                else:
+                  - homeassistant.action:
+                      action: media_player.unjoin
+                      data:
+                        entity_id: media_player.kuche
+      - button:
+          align: CENTER
+          x: 35
+          y: 60
+          id: button_bathroom
+          checkable: true
+          styles: style_button_small
+          widgets:
+            - label:
+                align: CENTER
+                id: label_bathroom
+                text: "\uF061"
+          on_click:
+            - if:
+                condition:
+                  lambda: return x;
+                then:
+                  - homeassistant.action:
+                      action: media_player.volume_set
+                      data:
+                        entity_id: media_player.badezimmer
+                        volume_level: !lambda return id(wohnzimmer_volume).state;
+                  - homeassistant.action:
+                      action: media_player.join
+                      data:
+                        entity_id: media_player.wohnzimmer
+                        group_members: media_player.badezimmer
+                else:
+                  - homeassistant.action:
+                      action: media_player.unjoin
+                      data:
+                        entity_id: media_player.badezimmer
+      - label:
+          align: CENTER
+          y: -50
+          width: 100
+          long_mode: SCROLL_CIRCULAR
+          id: label_artist_title
+          styles: style_label_artist_title
+          text: "Currently playing..."
+    - id: volume_page
+      bg_color: black
+      skip: true
+      widgets:
+      - arc:
+          align: CENTER
+          width: 100%
+          height: 100%
+          pad_all: 10
+          id: arc_volume_adjust
+          value: 50
+          arc_rounded: true
+          adv_hittest: true
+          adjustable: false
+      - label:
+          align: CENTER
+          id: label_volume_adjust
+          styles: style_label_volume_adjust
+          text: "50%"
+  resume_on_input: true
+  on_idle:
+    timeout: 60s
+    then:
+      - logger.log: "LVGL is idle"
+      - light.turn_off: display_backlight
+      - lvgl.pause:
+          show_snow: true
+
+script:
+  - id: volume_script
+    mode: restart
+    then:
+      - lvgl.page.show:
+          id: volume_page
+      - delay: 2s
+      - homeassistant.action:
+          action: media_player.volume_set
+          data:
+            entity_id: media_player.wohnzimmer
+            volume_level: !lambda return (id(volume_encoder).state * 5.0 / 100.0);
+      - lvgl.page.show:
+          id: main_page
