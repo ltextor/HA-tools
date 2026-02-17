@@ -52,8 +52,9 @@ def get_rss_article_content():
         article_response.raise_for_status()
         # get text content
         soup = BeautifulSoup(article_response.content, "lxml")
-        article_elements = soup.find_all(class_='ArticleElement_article-element__q93eL')
-        article_content = "\n".join([element.get_text() for element in article_elements])
+        #article_elements = soup.find_all(class_='ArticleElement_article-element__q93eL')
+        #article_content = "\n".join([element.get_text() for element in article_elements])
+        article_content = soup.article.get_text("\n", strip=True)
         return {"title": article_title, "date": article_date, "news": article_content}
     
     except Exception as e:
