@@ -54,7 +54,9 @@ def get_rss_article_content():
         soup = BeautifulSoup(article_response.content, "lxml")
         #article_elements = soup.find_all(class_='ArticleElement_article-element__q93eL')
         #article_content = "\n".join([element.get_text() for element in article_elements])
-        article_content = soup.article.get_text("\n", strip=True)
+        #article_content = soup.article.get_text("\n", strip=True)
+        article_elements = soup.find_all(class_='HtmlText')
+        article_content = "\n".join([element.get_text() for element in article_elements])
         return {"title": article_title, "date": article_date, "news": article_content}
     
     except Exception as e:
@@ -151,7 +153,7 @@ app = FastAPI()
 
 @app.get("/api/version")
 def get_version():
-    return {"version": "v2.3"}
+    return {"version": "v2.4"}
 
 @app.get("/api/dailynews")
 def get_dailynews():
