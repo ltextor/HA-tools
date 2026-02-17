@@ -55,7 +55,7 @@ def get_rss_article_content():
         #article_elements = soup.find_all(class_='ArticleElement_article-element__q93eL')
         #article_content = "\n".join([element.get_text() for element in article_elements])
         #article_content = soup.article.get_text("\n", strip=True)
-        article_elements = soup.find_all(class_=['astro-vze7ihyt', 'astro-hwk6bfo3'])
+        article_elements = soup.find_all(["h2", "span", "a"], class_=['astro-vze7ihyt', 'astro-hwk6bfo3'])
         article_content = "\n".join([element.get_text() for element in article_elements])
         return {"title": article_title, "date": article_date, "news": article_content}
     
