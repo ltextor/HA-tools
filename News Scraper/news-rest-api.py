@@ -21,6 +21,7 @@ article_date = ""
 article_content = ""
 
 fun_facts = []
+jokes = {'jokes': []}
 
 gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))  # set Google Maps API key in the environment variable or .env file
 origin_address = os.getenv('ORIGIN_ADDRESS')                     # set your address in the environment variable or .env file
@@ -84,6 +85,28 @@ def get_fun_fact():
     #except FileNotFoundError:
     #    print("File 'fun_facts.json' not found")
     #    return {"error": "File 'fun_facts.json' not found"}
+    except Exception as e:
+        error_msg = f"Error: {e}"
+        print(error_msg)
+        return {"error": error_msg}
+
+# ---
+# get random joke
+
+def get_joke():
+    global jokes
+    try:
+        if not len(jokes['jokes']):
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'jokes.json'), 'r', encoding='utf-8') as f:
+                jokes = json.load(f)
+            print(f"Loaded {len(jokes['jokes'])} jokes from file.")
+
+        joke = random.choice(jokes['jokes'])
+        jokes['jokes'].remove(joke)
+        print(f"Selected joke: {joke}")
+        print(f"Remaining jokes: {len(jokes['jokes'])}")
+        return joke
+
     except Exception as e:
         error_msg = f"Error: {e}"
         print(error_msg)
@@ -162,6 +185,10 @@ def get_dailynews():
 @app.get("/api/funfact")
 def get_funfact_endpoint():
     return get_fun_fact()
+
+@app.get("/api/joke")
+def get_joke_endpoint():
+    return get_joke()
 
 @app.get("/api/trafficinfo/{destination}")
 def get_traffic_for_destination(destination: str):
