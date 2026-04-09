@@ -16,8 +16,9 @@ blueprint:
           domain: input_datetime
     notify_service:
       name: "Benachrichtigungsdienst"
+      description: "z.B. notify.mobile_app_yourphone"
       selector:
-        action:
+        text:
     notification_title:
       name: "Benachrichtigungstitel"
       description: "Titel der periodischen Erinnerung"
