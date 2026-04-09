@@ -1,0 +1,91 @@
+blueprint:
+  name: "NFC Reminder"
+  description: "Erinnert dich per NFC-Scan-Tracking, eine gewisse Aufgabe periodisch zu erledigen."
+  domain: automation
+  input:
+    nfc_tag_id:
+      name: "NFC Tag ID"
+      description: "Die ID des NFC-Tags (zu finden unter Einstellungen -> Tags)"
+      selector:
+        text:
+    datetime_helper:
+      name: "Datum-Helfer"
+      description: "input_datetime Helfer zum Speichern des letzten Scans"
+      selector:
+        entity:
+          domain: input_datetime
+    notify_service:
+      name: "Benachrichtigungsdienst"
+      selector:
+        action:
+    notification_title:
+      name: "Benachrichtigungstitel"
+      description: "Titel der periodischen Erinnerung"
+      selector:
+        text:
+    notification_text:
+      name: "Benachrichtigungstext"
+      description: "Text der periodischen Erinnerung, unterstützt {{ days_since }} und {{ days_threshold }}"
+      default: "Letzte Erledigung vor {{ days_since }} Tagen."
+      selector:
+        text:
+    days_threshold:
+      name: "Tage bis Erinnerung"
+      default: 7
+      selector:
+        number:
+          min: 1
+          max: 365
+          unit_of_measurement: Tage
+    reminder_time:
+      name: "Erinnerungszeit"
+      default: "08:00:00"
+      selector:
+        time:
+
+triggers:
+  - tag_id: !input nfc_tag_id
+    trigger: tag
+    id: nfc
+  - at: !input reminder_time
+    trigger: time
+    id: time
+
+actions:
+  - variables:
+      datetime_helper: !input datetime_helper
+      days_threshold: !input days_threshold
+      notification_text: !input notification_text
+      days_since: >
+        {% if states(datetime_helper) in ['unknown', 'unavailable', 'none'] %}
+          {{ days_threshold }}
+        {% else %}
+          {{ (now().date() - (states(datetime_helper) | as_datetime | as_local).date()).days }}
+        {% endif %}
+
+  - choose:
+      - conditions:
+          - condition: trigger
+            id:
+              - nfc
+        sequence:
+          - target:
+              entity_id: !input datetime_helper
+            data:
+              date: "{{ now().strftime('%Y-%m-%d') }}"
+            action: input_datetime.set_datetime
+
+      - conditions:
+          - condition: trigger
+            id:
+              - time
+          - condition: template
+            value_template: "{{ days_since >= days_threshold }}"
+        sequence:
+          - action: !input notify_service
+            data:
+              title: !input notification_title
+              message: >
+                {{ notification_text
+                   | replace('{{ days_since }}', days_since | string)
+                   | replace('{{ days_threshold }}', days_threshold | string) }}
