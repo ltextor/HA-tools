@@ -26,8 +26,8 @@ blueprint:
         text:
     notification_text:
       name: "Benachrichtigungstext"
-      description: "Text der periodischen Erinnerung, unterstützt {{ days_since }} und {{ days_threshold }}"
-      default: "Letzte Erledigung vor {{ days_since }} Tagen."
+      description: "Text der periodischen Erinnerung, unterstützt %days_since% und %days_threshold%"
+      default: "Letzte Erledigung vor %days_since% Tagen."
       selector:
         text:
     days_threshold:
@@ -88,5 +88,5 @@ actions:
               title: !input notification_title
               message: >
                 {{ notification_text
-                   | replace('{{ days_since }}', days_since | string)
-                   | replace('{{ days_threshold }}', days_threshold | string) }}
+                   | replace('%days_since%', days_since | string)
+                   | replace('%days_threshold%', days_threshold | string) }}
