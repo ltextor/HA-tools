@@ -160,36 +160,38 @@ output:
     pin: GPIO22
     id: backlight_pwm
     frequency: 1000Hz
-  - platform: m5unit_encoder
-    m5unit_encoder_id: unit_encoder
-    led_index: 0
-    channel: red
-    id: led0_red
-  - platform: m5unit_encoder
-    m5unit_encoder_id: unit_encoder
-    led_index: 0
-    channel: green
-    id: led0_green
-  - platform: m5unit_encoder
-    m5unit_encoder_id: unit_encoder
-    led_index: 0
-    channel: blue
-    id: led0_blue
-  - platform: m5unit_encoder
-    m5unit_encoder_id: unit_encoder
-    led_index: 1
-    channel: red
-    id: led1_red
-  - platform: m5unit_encoder
-    m5unit_encoder_id: unit_encoder
-    led_index: 1
-    channel: green
-    id: led1_green
-  - platform: m5unit_encoder
-    m5unit_encoder_id: unit_encoder
-    led_index: 1
-    channel: blue
-    id: led1_blue
+
+  # M5Stack Unit Encoder
+  # - platform: m5unit_encoder
+  #   m5unit_encoder_id: unit_encoder
+  #   led_index: 0
+  #   channel: red
+  #   id: led0_red
+  # - platform: m5unit_encoder
+  #   m5unit_encoder_id: unit_encoder
+  #   led_index: 0
+  #   channel: green
+  #   id: led0_green
+  # - platform: m5unit_encoder
+  #   m5unit_encoder_id: unit_encoder
+  #   led_index: 0
+  #   channel: blue
+  #   id: led0_blue
+  # - platform: m5unit_encoder
+  #   m5unit_encoder_id: unit_encoder
+  #   led_index: 1
+  #   channel: red
+  #   id: led1_red
+  # - platform: m5unit_encoder
+  #   m5unit_encoder_id: unit_encoder
+  #   led_index: 1
+  #   channel: green
+  #   id: led1_green
+  # - platform: m5unit_encoder
+  #   m5unit_encoder_id: unit_encoder
+  #   led_index: 1
+  #   channel: blue
+  #   id: led1_blue
 
 light:
   - platform: monochromatic
@@ -198,16 +200,18 @@ light:
     id: backlight
     restore_mode: RESTORE_DEFAULT_ON
     default_transition_length: 250ms
-  - platform: rgb
-    name: "Encoder LED 0"
-    red: led0_red
-    green: led0_green
-    blue: led0_blue
-  - platform: rgb
-    name: "Encoder LED 1"
-    red: led1_red
-    green: led1_green
-    blue: led1_blue
+
+  # M5Stack Unit Encoder
+  # - platform: rgb
+  #   name: "Encoder LED 0"
+  #   red: led0_red
+  #   green: led0_green
+  #   blue: led0_blue
+  # - platform: rgb
+  #   name: "Encoder LED 1"
+  #   red: led1_red
+  #   green: led1_green
+  #   blue: led1_blue
 
 time:
   - platform: rx8130
@@ -239,6 +243,7 @@ switch:
       pi4ioe5v6408: pi4ioe2
       number: 5
       inverted: true
+    restore_mode: ALWAYS_ON
   - platform: gpio
     id: charge_enable
     name: "Charge Enable"
@@ -264,6 +269,7 @@ switch:
     pin:
       pi4ioe5v6408: pi4ioe1
       number: 2
+    restore_mode: ALWAYS_ON
 
 binary_sensor:
   - platform: gpio
@@ -280,16 +286,40 @@ binary_sensor:
     pin:
       pi4ioe5v6408: pi4ioe1
       number: 7
+    trigger_on_initial_state: true
+    on_state:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_on: headphone_detect
+            then:
+              - select.set:
+                  id: dac_output_select
+                  option: "LINE2"
+            else:
+              - select.set:
+                  id: dac_output_select
+                  option: "LINE1"
 
-  - platform: m5unit_encoder
-    m5unit_encoder_id: unit_encoder
-    name: "Encoder Button"
+  # M5Stack Unit Scroll
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    name: "Unit Scroll Button"
+    on_press:
+      then:
+        - media_player.toggle: local_media_player
+
+  # M5Stack Unit Encoder
+  # - platform: m5unit_encoder
+  #   m5unit_encoder_id: unit_encoder
+  #   name: "Encoder Button"
 
 # The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
 select:
   - platform: es8388
     dac_output:
       name: DAC Output
+      id: dac_output_select
     adc_input_mic:
       name: ADC Input Mic
 
@@ -328,6 +358,16 @@ sensor:
       # Positive means discharging
       # Negative means charging
 
+# M5Stack Unit Scroll
+  - platform: m5unit_scroll
+    name: "Unit Scroll Encoder"
+    id: unit_scroll
+    i2c_id: external_i2c
+    address: 0x40
+    update_interval: 50ms
+    increment:
+      name: "Unit Scroll Increment"
+
 # Tab5 built-in battery discharges from full (8.23 V) to shutdown threshold (6.0 V)
   - platform: template
     name: "Battery Percentage"
@@ -344,16 +384,16 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 1
 
-# M5Stack encoder unit
-  - platform: m5unit_encoder
-    id: unit_encoder
-    name: "Encoder Value"
-    i2c_id: external_i2c
+# M5Stack unit encoder
+#   - platform: m5unit_encoder
+#     id: unit_encoder
+#     name: "Encoder Value"
+#     i2c_id: external_i2c
     
-external_components:
-  - source: github://m5stack/esphome-yaml/components
-    components: [m5unit_encoder]
-    refresh: 0s 
+# external_components:
+#   - source: github://m5stack/esphome-yaml/components
+#     components: [m5unit_encoder]
+#     refresh: 0s 
 
 # Media player
 media_player:
@@ -375,19 +415,10 @@ rc522_i2c:
       - homeassistant.tag_scanned: !lambda 'return x;'
 
 # M5Stack unit scroll
-# external_components:
-#   - source: github://ltextor/mediaplayertablet/components
-#     components: [m5unit_scroll]
-# sensor:
-#   - platform: m5unit_scroll
-#     name: "Unit Scroll Encoder"
-#     id: unit_scroll
-#     i2c_id: external_i2c
-#     address: 0x40
-#     update_interval: 50ms
-#     increment:
-#       name: "Unit Scroll Increment"
-# binary_sensor:
-#   - platform: m5unit_scroll
-#     m5unit_scroll_id: unit_scroll
-#     name: "Unit Scroll Button"
+external_components:
+  - source:
+      type: git
+      url: https://github.com/ltextor/HA-tools
+      ref: main
+      path: ESPHome/MediaPlayerTablet/components
+    components: [m5unit_scroll]
