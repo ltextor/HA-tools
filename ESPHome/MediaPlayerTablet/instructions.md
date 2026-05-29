@@ -64,6 +64,10 @@ If daily listening time is set, show the remaining listening time on the top lef
 # Music information
 All the music information comes from Music Assistant running on a local Home Assistant server. The following actions can be used to extract albums and tracks using the media player entity of the local device. The get_queue service returns information about the queue of the media player. This can be used to get the current track and next track.
 
+# Screen off
+USB-power mode: Turn screen off when media player is not playing after 2 min idle (i.e. 2 min not playing without user interaction). Do not turn off screen when media player is playing.
+Battery-power mode: Turn screen off after 30 seconds idle (i.e. 30 seconds not playing without user interaction). Turn off screen when media player is playing after 1 min without user interaction.
+
 ## Action to get albums of an artist
 ``
 action: media_player.browse_media
@@ -357,3 +361,9 @@ media_player.local_media_player:
 # Rules
 - Add all the LVGL and UI code at the end of the existing mediaplayertablet.yaml
 - Define custom elements (e.g. the entity of the home assistant media player and the local media player) at the beginning of the yaml (as substitutions)
+
+# Documentation
+Add a documentation .md file to explain the relevant hardware and software steps to setup this system. The documentation is for non-technical users and should only contain the steps necessary to build and setup the system. It should be possible for a user to follow the documentation and successfully build and setup the system. Do not include any additional code in the documentation, only provide the steps and explanations.
+- For the hardware part, describe the modifications made to the original M5Stack Tab5 device.
+- For the software part, describe the configuration of the ESPHome device and the home assistant instance. Mention that the device has to be allowed to make services calls to the home assistant instance.
+- Also describe that the media player (under Home Assistant MediaPlayers) has to be added to music assistant.

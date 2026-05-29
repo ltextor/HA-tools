@@ -17,11 +17,19 @@ void M5UnitScroll::dump_config() {
 
 void M5UnitScroll::update() {
   const int16_t enc = this->read_encoder_value_();
-  this->publish_state(enc);
+  // Only publish when the absolute position has changed.
+  if (enc != this->last_encoder_value_) {
+    this->last_encoder_value_ = enc;
+    this->publish_state(enc);
+  }
 
   if (this->increment_sensor_ != nullptr) {
     const int16_t inc = this->read_increment_value_();
-    this->increment_sensor_->publish_state(inc);
+    // Only publish when there is actual movement — avoids triggering on_value
+    // callbacks at every poll interval when the encoder is idle.
+    if (inc != 0) {
+      this->increment_sensor_->publish_state(inc);
+    }
   }
 
   if (this->button_sensor_ != nullptr) {

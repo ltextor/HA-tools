@@ -1,14 +1,33 @@
 substitutions:
   device_name: "media-player-tablet"
   device_friendly_name: "Media Player Tablet"
+  media_player_entity: "media_player.media_player_tablet_2"  # Music Assistant version of the Home Assistant Media Player (add to Music Assistant manually)
+
+globals:
+  # Tracks the current volume (0.0–1.0). Initialised to -1.0 as a sentinel
+  # meaning "not yet synced from HA". The encoder won't act until HA pushes
+  # the first value after boot. Not persisted to flash — always restored from HA.
+  - id: current_volume
+    type: float
+    restore_value: false
+    initial_value: '-1.0'
 
 esphome:
   name: ${device_name}
   friendly_name: ${device_friendly_name}
+  platformio_options:
+    build_flags:
+      - -DUSE_RGB565LE  # Little-endian RGB565 for LVGL images (required for Tab5 V2)
   on_boot:
     then:
       # read the RTC time once when the system boots
-      rx8130.read_time:
+      - rx8130.read_time:
+      - select.set:
+          id: dac_output_select
+          option: "LINE1"
+      - light.turn_on:
+          id: backlight
+          brightness: 60%
 
 esp32:
   variant: esp32p4
@@ -65,8 +84,10 @@ i2c:
     scl: GPIO54
 
 esp_ldo:
-  - voltage: 2.5V
-    channel: 3
+  - voltage: 1.1V
+    channel: 4  # MIPI DSI Logic
+  - voltage: 2.7V
+    channel: 3  # Analog Power
 
 pi4ioe5v6408:
   - id: pi4ioe1
@@ -131,18 +152,24 @@ speaker:
 
 display:
   - platform: mipi_dsi
+    id: lcd
     dimensions:
       height: 1280
       width: 720
-    model: M5Stack-Tab5
+    model: M5STACK-TAB5-V2
+    pixel_mode: 24bit  # Required for correct color output on Tab5 V2
     reset_pin:
       pi4ioe5v6408: pi4ioe1
       number: 4
-    show_test_card: true
+      inverted: true
+    show_test_card: false
+    auto_clear_enabled: false
+    update_interval: never
 
 touchscreen:
-  - platform: gt911
+  - platform: st7123
     id: touch
+    display: lcd
     i2c_id: bsp_bus
     interrupt_pin: GPIO23
     update_interval: never
@@ -279,6 +306,16 @@ binary_sensor:
       pi4ioe5v6408: pi4ioe2
       number: 6
       mode: INPUT_PULLDOWN
+    on_state:
+      then:
+        - lvgl.label.update:
+            id: battery_label
+            text: !lambda |-
+              char buf[32];
+              float pct = id(battery_percentage).state;
+              if (std::isnan(pct)) pct = 0.0;
+              sprintf(buf, "%.1f%%%s", pct, x ? " (Charging)" : "");
+              return std::string(buf);
 
   - platform: gpio
     id: headphone_detect
@@ -293,13 +330,9 @@ binary_sensor:
             condition:
               binary_sensor.is_on: headphone_detect
             then:
-              - select.set:
-                  id: dac_output_select
-                  option: "LINE2"
+              - switch.turn_off: speaker_enable
             else:
-              - select.set:
-                  id: dac_output_select
-                  option: "LINE1"
+              - switch.turn_on: speaker_enable
 
   # M5Stack Unit Scroll
   - platform: m5unit_scroll
@@ -307,7 +340,10 @@ binary_sensor:
     name: "Unit Scroll Button"
     on_press:
       then:
-        - media_player.toggle: local_media_player
+        - homeassistant.service:
+            service: media_player.media_play_pause
+            data:
+              entity_id: ${media_player_entity}
 
   # M5Stack Unit Encoder
   # - platform: m5unit_encoder
@@ -367,10 +403,42 @@ sensor:
     update_interval: 50ms
     increment:
       name: "Unit Scroll Increment"
+      # on_value only fires when non-zero (the C++ component filters idle polls)
+      on_value:
+        then:
+          - if:
+              condition:
+                # Guard: ignore until HA has synced the initial volume after boot
+                lambda: 'return id(current_volume) >= 0.0f;'
+              then:
+                - globals.set:
+                    id: current_volume
+                    value: !lambda |-
+                      float v = id(current_volume) + x * 0.02f;
+                      if (v < 0.0f) v = 0.0f;
+                      if (v > 1.0f) v = 1.0f;
+                      return v;
+                - homeassistant.service:
+                    service: media_player.volume_set
+                    data:
+                      entity_id: ${media_player_entity}
+                    data_template:
+                      volume_level: !lambda 'return id(current_volume);'
+                - lvgl.bar.update:
+                    id: volume_bar
+                    value: !lambda 'return (int)(id(current_volume) * 100);'
+                - lvgl.label.update:
+                    id: volume_label
+                    text: !lambda |-
+                      char buf[8];
+                      sprintf(buf, "%d%%", (int)(id(current_volume) * 100));
+                      return std::string(buf);
+                - script.execute: show_volume_overlay
 
 # Tab5 built-in battery discharges from full (8.23 V) to shutdown threshold (6.0 V)
   - platform: template
     name: "Battery Percentage"
+    id: battery_percentage
     lambda: |-
       float voltage = id(battery_voltage).state;
       // Adjust these values based on your battery's actual min/max voltage
@@ -383,13 +451,57 @@ sensor:
     update_interval: 60s
     unit_of_measurement: "%"
     accuracy_decimals: 1
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: battery_label
+            text: !lambda |-
+              char buf[32];
+              float pct = x;
+              if (std::isnan(pct)) pct = 0.0;
+              bool is_charging = id(charging).state;
+              sprintf(buf, "%.1f%%%s", pct, is_charging ? " (Charging)" : "");
+              return std::string(buf);
 
 # M5Stack unit encoder
 #   - platform: m5unit_encoder
 #     id: unit_encoder
 #     name: "Encoder Value"
 #     i2c_id: external_i2c
-    
+
+# HA volume level — numeric 0.0–1.0, synced from the media player entity.
+# Used to keep current_volume in sync with external (HA-side) changes.
+  - platform: homeassistant
+    id: ha_volume
+    entity_id: ${media_player_entity}
+    attribute: volume_level
+    on_value:
+      then:
+        - if:
+            condition:
+              # First push after boot (sentinel -1.0): sync silently, no overlay.
+              # Subsequent external changes: sync AND show overlay.
+              lambda: 'return id(current_volume) < 0.0f;'
+            then:
+              - globals.set:
+                  id: current_volume
+                  value: !lambda 'return x;'
+            else:
+              - globals.set:
+                  id: current_volume
+                  value: !lambda 'return x;'
+              - lvgl.bar.update:
+                  id: volume_bar
+                  value: !lambda 'return (int)(x * 100);'
+              - lvgl.label.update:
+                  id: volume_label
+                  text: !lambda |-
+                    char buf[8];
+                    sprintf(buf, "%d%%", (int)(x * 100));
+                    return std::string(buf);
+              - script.execute: show_volume_overlay
+
+
 # external_components:
 #   - source: github://m5stack/esphome-yaml/components
 #     components: [m5unit_encoder]
@@ -422,3 +534,185 @@ external_components:
       ref: main
       path: ESPHome/MediaPlayerTablet/components
     components: [m5unit_scroll]
+  - source: "github://pr#12075"
+    components: [st7123]
+    refresh: 1d
+
+font:
+  - file: "gfonts://Outfit"
+    id: outfit_font_24
+    size: 24
+  - file: "gfonts://Outfit"
+    id: outfit_font_48
+    size: 48
+
+script:
+  # Shows the volume overlay and auto-hides it after 2 s.
+  # mode: restart resets the timer on every encoder step while turning.
+  - id: show_volume_overlay
+    mode: restart
+    then:
+      - lvgl.widget.show: volume_overlay
+      - delay: 2s
+      - lvgl.widget.hide: volume_overlay
+
+text_sensor:
+  - platform: homeassistant
+    id: current_track
+    entity_id: ${media_player_entity}
+    attribute: media_title
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: track_label
+            text: !lambda |-
+              std::string artist = id(current_artist).state;
+              if (artist == "unknown" || artist == "unavailable") artist = "";
+              if (x.empty() || x == "unknown" || x == "unavailable") return std::string("No Track Playing");
+              if (artist.empty()) return x;
+              return artist + " - " + x;
+
+  - platform: homeassistant
+    id: current_artist
+    entity_id: ${media_player_entity}
+    attribute: media_artist
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: track_label
+            text: !lambda |-
+              std::string track = id(current_track).state;
+              if (track == "unknown" || track == "unavailable") track = "";
+              if (track.empty() || track == "No Track Playing") return std::string("No Track Playing");
+              if (x.empty() || x == "unknown" || x == "unavailable") return track;
+              return x + " - " + track;
+
+lvgl:
+  rotation: 90
+  bottom_layer:
+    bg_color: 0x121212
+  style_definitions:
+    - id: title_style
+      text_font: outfit_font_48
+      text_color: 0xEAEAEA
+    - id: label_style
+      text_font: outfit_font_24
+      text_color: 0xA0A0A0
+    - id: value_style
+      text_font: outfit_font_48
+      text_color: 0x00FF88
+    - id: card_style
+      bg_color: 0x1E1E1E
+      bg_opa: 80%
+      border_width: 1
+      border_color: 0x333333
+      radius: 12
+      pad_all: 20
+  pages:
+    - id: main_page
+      widgets:
+        - obj:
+            width: 1240
+            height: 680
+            align: CENTER
+            layout:
+              type: flex
+              flex_flow: column
+              flex_align_main: space_evenly
+              flex_align_cross: center
+            widgets:
+              - label:
+                  text: "System Test Screen"
+                  styles: [title_style]
+              - obj:
+                  width: 1200
+                  height: 450
+                  bg_opa: 0%
+                  layout:
+                    type: flex
+                    flex_flow: row
+                    flex_align_main: space_around
+                    flex_align_cross: center
+                  widgets:
+                    - obj:
+                        width: 550
+                        height: 380
+                        styles: [card_style]
+                        layout:
+                          type: flex
+                          flex_flow: column
+                          flex_align_main: space_around
+                          flex_align_cross: center
+                        widgets:
+                          - label:
+                              text: "Currently Playing"
+                              styles: [label_style]
+                          - label:
+                              id: track_label
+                              text: "No Track Playing"
+                              styles: [title_style]
+                              width: 500
+                              long_mode: SCROLL_CIRCULAR
+                    - obj:
+                        width: 550
+                        height: 380
+                        styles: [card_style]
+                        layout:
+                          type: flex
+                          flex_flow: column
+                          flex_align_main: space_around
+                          flex_align_cross: center
+                        widgets:
+                          - label:
+                              text: "Battery Status"
+                              styles: [label_style]
+                          - label:
+                              id: battery_label
+                              text: "--- %"
+                              styles: [value_style]
+
+        # Volume overlay — floats over page content, hidden until encoder or HA changes volume.
+        # mode: restart in the script ensures it auto-hides 2 s after the last step.
+        - obj:
+            id: volume_overlay
+            hidden: true
+            width: 680
+            height: 70
+            align: BOTTOM_MID
+            y: -20
+            bg_color: 0x1E1E1E
+            bg_opa: 95%
+            border_width: 1
+            border_color: 0x333333
+            radius: 12
+            pad_left: 16
+            pad_right: 16
+            pad_top: 0
+            pad_bottom: 0
+            layout:
+              type: flex
+              flex_flow: row
+              flex_align_cross: center
+              flex_align_main: space_between
+            widgets:
+              - label:
+                  text: "\U0001F50A"
+                  text_font: outfit_font_24
+                  text_color: 0x00FF88
+              - bar:
+                  id: volume_bar
+                  width: 490
+                  height: 16
+                  min_value: 0
+                  max_value: 100
+                  value: 50
+                  indicator:
+                    bg_color: 0x00FF88
+                  bg_color: 0x333333
+              - label:
+                  id: volume_label
+                  text: "50%"
+                  text_font: outfit_font_24
+                  text_color: 0xA0A0A0
+                  width: 70
+                  text_align: RIGHT
