@@ -534,6 +534,7 @@ external_components:
       ref: main
       path: ESPHome/MediaPlayerTablet/components
     components: [m5unit_scroll]
+    refresh: 0s
   - source: "github://pr#12075"
     components: [st7123]
     refresh: 1d

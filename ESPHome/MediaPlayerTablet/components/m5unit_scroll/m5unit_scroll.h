@@ -41,7 +41,7 @@ class M5UnitScroll : public sensor::Sensor, public PollingComponent, public i2c:
 
   binary_sensor::BinarySensor *button_sensor_{nullptr};
   sensor::Sensor *increment_sensor_{nullptr};
-  int16_t last_encoder_value_{0};
+  int16_t last_encoder_value_{INT16_MIN};  // sentinel: forces one publish on first poll
 };
 
 }  // namespace m5unit_scroll

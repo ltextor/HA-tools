@@ -17,7 +17,10 @@ void M5UnitScroll::dump_config() {
 
 void M5UnitScroll::update() {
   const int16_t enc = this->read_encoder_value_();
-  // Only publish when the absolute position has changed.
+  // Only publish when the absolute position has actually changed.
+  // last_encoder_value_ is initialised to INT16_MIN so the very first read
+  // is always treated as a change (captures the true initial position),
+  // but subsequent idle polls at the same value are suppressed.
   if (enc != this->last_encoder_value_) {
     this->last_encoder_value_ = enc;
     this->publish_state(enc);
