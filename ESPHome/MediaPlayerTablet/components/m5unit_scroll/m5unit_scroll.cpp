@@ -8,6 +8,11 @@ static const char *const TAG = "m5unit_scroll";
 
 void M5UnitScroll::setup() {
   ESP_LOGCONFIG(TAG, "Setting up M5Unit Scroll...");
+  // Ensure both LEDs are off on every boot/reset, regardless of prior state.
+  // Without this, the encoder module (which stays powered during software resets)
+  // retains whatever LED colour it had before the reset.
+  this->set_led_color(0, 0x000000);
+  this->set_led_color(1, 0x000000);
 }
 
 void M5UnitScroll::dump_config() {

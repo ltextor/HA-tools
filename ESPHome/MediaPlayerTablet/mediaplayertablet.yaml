@@ -146,7 +146,7 @@ speaker:
     audio_dac: es8388_dac
     dac_type: external
     channel: mono
-    buffer_duration: 100ms
+    buffer_duration: 500ms
     bits_per_sample: 16bit
     sample_rate: 48000
 
@@ -534,7 +534,6 @@ external_components:
       ref: main
       path: ESPHome/MediaPlayerTablet/components
     components: [m5unit_scroll]
-    refresh: 0s
   - source: "github://pr#12075"
     components: [st7123]
     refresh: 1d
