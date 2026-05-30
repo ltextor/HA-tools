@@ -2,6 +2,7 @@
 
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/i2c/i2c.h"
+#include "esphome/components/output/float_output.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
 
@@ -22,6 +23,27 @@ static const uint8_t JUMP_TO_BOOTLOADER_REG = 0xFD;
 static const uint8_t FIRMWARE_VERSION_REG = 0xFE;
 static const uint8_t I2C_ADDRESS_REG = 0xFF;
 
+// Forward declaration required by M5UnitScrollLEDOutput
+class M5UnitScroll;
+
+/// Represents one colour channel (R, G or B) of one of the two scroll encoder
+/// LEDs. Created by the `output:` platform; combine three channels per LED
+/// into a `light: platform: rgb` entity in YAML.
+class M5UnitScrollLEDOutput : public output::FloatOutput {
+ public:
+  void set_parent(M5UnitScroll *parent) { parent_ = parent; }
+  void set_led_index(uint8_t index) { led_index_ = index; }
+  /// channel: 0 = R, 1 = G, 2 = B
+  void set_channel(uint8_t channel) { channel_ = channel; }
+
+  void write_state(float state) override;
+
+ protected:
+  M5UnitScroll *parent_{nullptr};
+  uint8_t led_index_{0};
+  uint8_t channel_{0};
+};
+
 class M5UnitScroll : public sensor::Sensor, public PollingComponent, public i2c::I2CDevice {
  public:
   void setup() override;
@@ -32,7 +54,13 @@ class M5UnitScroll : public sensor::Sensor, public PollingComponent, public i2c:
   void set_increment_sensor(sensor::Sensor *sensor) { this->increment_sensor_ = sensor; }
 
   void reset_encoder();
+
+  /// Write a full 24-bit colour (0x00RRGGBB) directly to one LED.
   void set_led_color(uint8_t index, uint32_t color);
+
+  /// Update one channel of an LED and push the recomposed colour to hardware.
+  /// Called by M5UnitScrollLEDOutput::write_state().
+  void set_led_channel(uint8_t index, uint8_t channel, uint8_t value);
 
  protected:
   int16_t read_encoder_value_();
@@ -42,6 +70,10 @@ class M5UnitScroll : public sensor::Sensor, public PollingComponent, public i2c:
   binary_sensor::BinarySensor *button_sensor_{nullptr};
   sensor::Sensor *increment_sensor_{nullptr};
   int16_t last_encoder_value_{INT16_MIN};  // sentinel: forces one publish on first poll
+
+  /// Cached per-channel brightness so partial writes can recompose full RGB.
+  /// led_state_[led_index][channel] where channel: 0=R, 1=G, 2=B.
+  uint8_t led_state_[2][3]{};
 };
 
 }  // namespace m5unit_scroll

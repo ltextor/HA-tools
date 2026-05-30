@@ -93,5 +93,24 @@ void M5UnitScroll::set_led_color(uint8_t index, uint32_t color) {
   }
 }
 
+void M5UnitScroll::set_led_channel(uint8_t index, uint8_t channel, uint8_t value) {
+  if (index > 1 || channel > 2)
+    return;
+  led_state_[index][channel] = value;
+  uint32_t color = ((uint32_t) led_state_[index][0] << 16) |  // R
+                   ((uint32_t) led_state_[index][1] << 8) |   // G
+                   ((uint32_t) led_state_[index][2]);          // B
+  this->set_led_color(index, color);
+}
+
+void M5UnitScrollLEDOutput::write_state(float state) {
+  if (parent_ == nullptr)
+    return;
+  // Clamp and convert 0.0–1.0 float to 0–255 byte
+  if (state < 0.0f) state = 0.0f;
+  if (state > 1.0f) state = 1.0f;
+  parent_->set_led_channel(led_index_, channel_, (uint8_t)(state * 255.0f));
+}
+
 }  // namespace m5unit_scroll
 }  // namespace esphome

@@ -84,10 +84,12 @@ i2c:
     scl: GPIO54
 
 esp_ldo:
-  - voltage: 1.1V
-    channel: 4  # MIPI DSI Logic
-  - voltage: 2.7V
-    channel: 3  # Analog Power
+  # - voltage: 1.1V
+  #   channel: 4  # MIPI DSI Logic
+  # - voltage: 2.7V
+  #   channel: 3  # Analog Power
+  - voltage: 2.5V
+    channel: 3
 
 pi4ioe5v6408:
   - id: pi4ioe1
@@ -157,14 +159,14 @@ display:
       height: 1280
       width: 720
     model: M5STACK-TAB5-V2
-    pixel_mode: 24bit  # Required for correct color output on Tab5 V2
+    # pixel_mode: 24bit  # Required for correct color output on Tab5 V2
     reset_pin:
       pi4ioe5v6408: pi4ioe1
       number: 4
-      inverted: true
-    show_test_card: false
-    auto_clear_enabled: false
-    update_interval: never
+      # inverted: true
+    # show_test_card: false
+    # auto_clear_enabled: false
+    # update_interval: never
 
 touchscreen:
   - platform: st7123
@@ -176,11 +178,17 @@ touchscreen:
     reset_pin:
       pi4ioe5v6408: pi4ioe1
       number: 5
+    # NB: Those min/max values are *after* swapping (raw x is 0..720).
     calibration:
       x_min: 0
-      x_max: 720
+      x_max: 1280
       y_min: 0
-      y_max: 1280
+      y_max: 720
+    # Landscape orientation
+    transform:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: false
 
 output:
   - platform: ledc
@@ -188,37 +196,37 @@ output:
     id: backlight_pwm
     frequency: 1000Hz
 
-  # M5Stack Unit Encoder
-  # - platform: m5unit_encoder
-  #   m5unit_encoder_id: unit_encoder
-  #   led_index: 0
-  #   channel: red
-  #   id: led0_red
-  # - platform: m5unit_encoder
-  #   m5unit_encoder_id: unit_encoder
-  #   led_index: 0
-  #   channel: green
-  #   id: led0_green
-  # - platform: m5unit_encoder
-  #   m5unit_encoder_id: unit_encoder
-  #   led_index: 0
-  #   channel: blue
-  #   id: led0_blue
-  # - platform: m5unit_encoder
-  #   m5unit_encoder_id: unit_encoder
-  #   led_index: 1
-  #   channel: red
-  #   id: led1_red
-  # - platform: m5unit_encoder
-  #   m5unit_encoder_id: unit_encoder
-  #   led_index: 1
-  #   channel: green
-  #   id: led1_green
-  # - platform: m5unit_encoder
-  #   m5unit_encoder_id: unit_encoder
-  #   led_index: 1
-  #   channel: blue
-  #   id: led1_blue
+  # M5Stack Unit Scroll — six output channels (2 LEDs × RGB)
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 0
+    channel: red
+    id: led0_red
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 0
+    channel: green
+    id: led0_green
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 0
+    channel: blue
+    id: led0_blue
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 1
+    channel: red
+    id: led1_red
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 1
+    channel: green
+    id: led1_green
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 1
+    channel: blue
+    id: led1_blue
 
 light:
   - platform: monochromatic
@@ -228,17 +236,21 @@ light:
     restore_mode: RESTORE_DEFAULT_ON
     default_transition_length: 250ms
 
-  # M5Stack Unit Encoder
-  # - platform: rgb
-  #   name: "Encoder LED 0"
-  #   red: led0_red
-  #   green: led0_green
-  #   blue: led0_blue
-  # - platform: rgb
-  #   name: "Encoder LED 1"
-  #   red: led1_red
-  #   green: led1_green
-  #   blue: led1_blue
+  # M5Stack Unit Scroll — two RGB light entities
+  - platform: rgb
+    name: "Scroll LED 0"
+    id: scroll_led_0
+    red: led0_red
+    green: led0_green
+    blue: led0_blue
+    restore_mode: ALWAYS_OFF
+  - platform: rgb
+    name: "Scroll LED 1"
+    id: scroll_led_1
+    red: led1_red
+    green: led1_green
+    blue: led1_blue
+    restore_mode: ALWAYS_OFF
 
 time:
   - platform: rx8130
@@ -536,7 +548,6 @@ external_components:
     components: [m5unit_scroll]
   - source: "github://pr#12075"
     components: [st7123]
-    refresh: 1d
 
 font:
   - file: "gfonts://Outfit"
@@ -587,7 +598,13 @@ text_sensor:
               if (x.empty() || x == "unknown" || x == "unavailable") return track;
               return x + " - " + track;
 
+image:
+  defaults:
+    type: rgb565
+    byte_order: little_endian
+
 lvgl:
+  byte_order: little_endian 
   rotation: 90
   bottom_layer:
     bg_color: 0x121212
