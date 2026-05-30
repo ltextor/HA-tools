@@ -561,10 +561,16 @@ font:
     id: roboto_font_24
     size: 24
     bpp: 4  # 4-bit greyscale anti-aliasing
+    glyphsets:
+      - GF_Latin_Core
+    glyphs:
+      - "\U0001F50A"
   - file: "gfonts://Roboto"
     id: roboto_font_48
     size: 48
     bpp: 4  # 4-bit greyscale anti-aliasing
+    glyphsets:
+      - GF_Latin_Core
 
 script:
   # Shows the volume overlay and auto-hides it after 2 s.
