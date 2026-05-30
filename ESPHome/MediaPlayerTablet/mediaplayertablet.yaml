@@ -166,12 +166,12 @@ display:
       height: 1280
       width: 720
     model: M5STACK-TAB5-V2
-    # pixel_mode: 24bit  # Required for correct color output on Tab5 V2
+    pixel_mode: 24bit  # Required for correct color output on Tab5 V2
     reset_pin:
       pi4ioe5v6408: pi4ioe1
       number: 4
       # inverted: true
-    # show_test_card: false
+    show_test_card: true
     # auto_clear_enabled: false
     # update_interval: never
 
@@ -236,6 +236,7 @@ light:
     green: led0_green
     blue: led0_blue
     restore_mode: ALWAYS_OFF
+    default_transition_length: 0s
 
 time:
   - platform: rx8130
@@ -552,9 +553,11 @@ font:
   - file: "gfonts://Roboto"
     id: roboto_font_24
     size: 24
+    bpp: 4  # 4-bit greyscale anti-aliasing
   - file: "gfonts://Roboto"
     id: roboto_font_48
     size: 48
+    bpp: 4  # 4-bit greyscale anti-aliasing
 
 script:
   # Shows the volume overlay and auto-hides it after 2 s.
