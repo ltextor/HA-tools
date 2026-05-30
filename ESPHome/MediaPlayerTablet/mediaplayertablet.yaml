@@ -12,6 +12,13 @@ globals:
     restore_value: false
     initial_value: '-1.0'
 
+  # True while the encoder is actively turning. Suppresses HA echo-back so the
+  # round-trip (encoder → HA → ha_volume callback) doesn't fight the encoder.
+  - id: encoder_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
 esphome:
   name: ${device_name}
   friendly_name: ${device_friendly_name}
@@ -423,6 +430,11 @@ sensor:
                 # Guard: ignore until HA has synced the initial volume after boot
                 lambda: 'return id(current_volume) >= 0.0f;'
               then:
+                # Mark encoder as active to suppress HA echo-back for 500 ms
+                - globals.set:
+                    id: encoder_active
+                    value: 'true'
+                - script.execute: suppress_ha_echo
                 - globals.set:
                     id: current_volume
                     value: !lambda |-
@@ -499,19 +511,28 @@ sensor:
                   id: current_volume
                   value: !lambda 'return x;'
             else:
-              - globals.set:
-                  id: current_volume
-                  value: !lambda 'return x;'
-              - lvgl.bar.update:
-                  id: volume_bar
-                  value: !lambda 'return (int)(x * 100);'
-              - lvgl.label.update:
-                  id: volume_label
-                  text: !lambda |-
-                    char buf[8];
-                    sprintf(buf, "%d%%", (int)(x * 100));
-                    return std::string(buf);
-              - script.execute: show_volume_overlay
+              - if:
+                  condition:
+                    # Encoder is actively turning — HA is echoing our command back.
+                    # Ignore completely: the encoder owns current_volume during this window.
+                    lambda: 'return id(encoder_active);'
+                  then:
+                    []  # do nothing — encoder manages current_volume exclusively
+                  else:
+                    # Genuine external change (e.g. from HA dashboard or another device).
+                    - globals.set:
+                        id: current_volume
+                        value: !lambda 'return x;'
+                    - lvgl.bar.update:
+                        id: volume_bar
+                        value: !lambda 'return (int)(x * 100);'
+                    - lvgl.label.update:
+                        id: volume_label
+                        text: !lambda |-
+                          char buf[8];
+                          sprintf(buf, "%d%%", (int)(x * 100));
+                          return std::string(buf);
+                    - script.execute: show_volume_overlay
 
 
 # external_components:
@@ -550,11 +571,11 @@ external_components:
     components: [st7123]
 
 font:
-  - file: "gfonts://Outfit"
-    id: outfit_font_24
+  - file: "gfonts://Roboto"
+    id: roboto_font_24
     size: 24
-  - file: "gfonts://Outfit"
-    id: outfit_font_48
+  - file: "gfonts://Roboto"
+    id: roboto_font_48
     size: 48
 
 script:
@@ -566,6 +587,16 @@ script:
       - lvgl.widget.show: volume_overlay
       - delay: 2s
       - lvgl.widget.hide: volume_overlay
+
+  # Clears encoder_active after 500 ms, allowing HA-side changes to sync again.
+  # mode: restart resets the window on every new encoder tick.
+  - id: suppress_ha_echo
+    mode: restart
+    then:
+      - delay: 500ms
+      - globals.set:
+          id: encoder_active
+          value: 'false'
 
 text_sensor:
   - platform: homeassistant
@@ -610,13 +641,13 @@ lvgl:
     bg_color: 0x121212
   style_definitions:
     - id: title_style
-      text_font: outfit_font_48
+      text_font: roboto_font_48
       text_color: 0xEAEAEA
     - id: label_style
-      text_font: outfit_font_24
+      text_font: roboto_font_24
       text_color: 0xA0A0A0
     - id: value_style
-      text_font: outfit_font_48
+      text_font: roboto_font_48
       text_color: 0x00FF88
     - id: card_style
       bg_color: 0x1E1E1E
@@ -714,7 +745,7 @@ lvgl:
             widgets:
               - label:
                   text: "\U0001F50A"
-                  text_font: outfit_font_24
+                  text_font: roboto_font_24
                   text_color: 0x00FF88
               - bar:
                   id: volume_bar
@@ -729,7 +760,7 @@ lvgl:
               - label:
                   id: volume_label
                   text: "50%"
-                  text_font: outfit_font_24
+                  text_font: roboto_font_24
                   text_color: 0xA0A0A0
                   width: 70
                   text_align: RIGHT

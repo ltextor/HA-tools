@@ -44,6 +44,12 @@ void M5UnitScroll::update() {
     const bool pressed = this->read_button_pressed_();
     this->button_sensor_->publish_state(pressed);
   }
+
+  // Flush any LED state changes that arrived since the last update().
+  // The rgb light platform sets R, G, and B in three separate write_state()
+  // calls, which would cause three I2C writes and flicker if we sent each
+  // immediately. Deferring to here collapses them into one transaction.
+  this->flush_leds_();
 }
 
 int16_t M5UnitScroll::read_encoder_value_() {
@@ -81,34 +87,57 @@ void M5UnitScroll::reset_encoder() {
 }
 
 void M5UnitScroll::set_led_color(uint8_t index, uint32_t color) {
-  // Official library writes: [index, R, G, B] to RGB_LED_REG
-  uint8_t data[4];
-  data[0] = index;
-  data[1] = (color >> 16) & 0xFF;  // R
-  data[2] = (color >> 8) & 0xFF;   // G
-  data[3] = (color >> 0) & 0xFF;   // B
+  // Official M5Unit Scroll library: setLEDColor(uint32_t color, uint8_t index)
+  // writes [R, G, B] to register RGB_LED_REG + index * 3.
+  //   LED 0 → 0x30, LED 1 → 0x33
+  // The original code wrote [index, R, G, B] to a single register, which
+  // put the index byte into the RED channel — causing both LEDs to map to the
+  // same physical LED and leaving a dim red glow after "off" writes for LED 1.
+  uint8_t data[3];
+  data[0] = (color >> 16) & 0xFF;  // R
+  data[1] = (color >> 8) & 0xFF;   // G
+  data[2] = (color >> 0) & 0xFF;   // B
 
-  if (!this->write_bytes(RGB_LED_REG, data, 4)) {
-    ESP_LOGW(TAG, "Failed to set LED color");
+  uint8_t reg = RGB_LED_REG + index * 3;  // 0x30 for index=0, 0x33 for index=1
+  if (!this->write_bytes(reg, data, 3)) {
+    ESP_LOGW(TAG, "Failed to set LED %u color", index);
   }
 }
 
 void M5UnitScroll::set_led_channel(uint8_t index, uint8_t channel, uint8_t value) {
   if (index > 1 || channel > 2)
     return;
+  if (led_state_[index][channel] == value)
+    return;  // No change — skip dirty mark to avoid redundant flushes
   led_state_[index][channel] = value;
-  uint32_t color = ((uint32_t) led_state_[index][0] << 16) |  // R
-                   ((uint32_t) led_state_[index][1] << 8) |   // G
-                   ((uint32_t) led_state_[index][2]);          // B
-  this->set_led_color(index, color);
+  led_dirty_[index] = true;
+  // Do NOT write to I2C here. The rgb light calls write_state() three times
+  // (once per channel) in rapid succession. Writing here would send three
+  // separate I2C transactions with intermediate partial colours, causing
+  // visible flicker. flush_leds_() in update() sends a single write after
+  // all channels have been updated.
+}
+
+void M5UnitScroll::flush_leds_() {
+  for (uint8_t i = 0; i < 2; i++) {
+    if (led_dirty_[i]) {
+      uint32_t color = ((uint32_t) led_state_[i][0] << 16) |  // R
+                       ((uint32_t) led_state_[i][1] << 8) |   // G
+                       ((uint32_t) led_state_[i][2]);          // B
+      this->set_led_color(i, color);
+      led_dirty_[i] = false;
+    }
+  }
 }
 
 void M5UnitScrollLEDOutput::write_state(float state) {
   if (parent_ == nullptr)
     return;
   // Clamp and convert 0.0–1.0 float to 0–255 byte
-  if (state < 0.0f) state = 0.0f;
-  if (state > 1.0f) state = 1.0f;
+  if (state < 0.0f)
+    state = 0.0f;
+  if (state > 1.0f)
+    state = 1.0f;
   parent_->set_led_channel(led_index_, channel_, (uint8_t)(state * 255.0f));
 }
 

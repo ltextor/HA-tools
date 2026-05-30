@@ -13,7 +13,7 @@ static const uint8_t SCROLL_ADDR = 0x40;
 
 static const uint8_t ENCODER_REG = 0x10;
 static const uint8_t BUTTON_REG = 0x20;
-static const uint8_t RGB_LED_REG = 0x30;
+static const uint8_t RGB_LED_REG = 0x30;  // 3-byte write: [R, G, B]
 static const uint8_t RESET_REG = 0x40;
 static const uint8_t INC_ENCODER_REG = 0x50;
 
@@ -26,9 +26,14 @@ static const uint8_t I2C_ADDRESS_REG = 0xFF;
 // Forward declaration required by M5UnitScrollLEDOutput
 class M5UnitScroll;
 
-/// Represents one colour channel (R, G or B) of one of the two scroll encoder
-/// LEDs. Created by the `output:` platform; combine three channels per LED
+/// Represents one colour channel (R, G or B) of one of the scroll encoder LEDs.
+/// Created by the `output:` platform; combine three channels per LED
 /// into a `light: platform: rgb` entity in YAML.
+///
+/// Note: The official M5Unit Scroll Arduino library signature is
+///   setLEDColor(uint32_t color, uint8_t index = 0)
+/// which writes [R, G, B] to register RGB_LED_REG + index * 3.
+/// Two physical LEDs exist on the module at offsets 0x30 (LED 0) and 0x33 (LED 1).
 class M5UnitScrollLEDOutput : public output::FloatOutput {
  public:
   void set_parent(M5UnitScroll *parent) { parent_ = parent; }
@@ -56,16 +61,22 @@ class M5UnitScroll : public sensor::Sensor, public PollingComponent, public i2c:
   void reset_encoder();
 
   /// Write a full 24-bit colour (0x00RRGGBB) directly to one LED.
+  /// LED 0 → reg 0x30, LED 1 → reg 0x33.
   void set_led_color(uint8_t index, uint32_t color);
 
-  /// Update one channel of an LED and push the recomposed colour to hardware.
-  /// Called by M5UnitScrollLEDOutput::write_state().
+  /// Update one channel of an LED and mark it dirty for the next flush.
+  /// The actual I2C write is deferred to flush_leds_() inside update(),
+  /// so all three R/G/B channel writes (which the rgb light makes in quick
+  /// succession) are collapsed into a single I2C transaction — eliminating flicker.
   void set_led_channel(uint8_t index, uint8_t channel, uint8_t value);
 
  protected:
   int16_t read_encoder_value_();
   int16_t read_increment_value_();
   bool read_button_pressed_();
+
+  /// Push any dirty LED state to hardware. Called at the end of update().
+  void flush_leds_();
 
   binary_sensor::BinarySensor *button_sensor_{nullptr};
   sensor::Sensor *increment_sensor_{nullptr};
@@ -74,6 +85,9 @@ class M5UnitScroll : public sensor::Sensor, public PollingComponent, public i2c:
   /// Cached per-channel brightness so partial writes can recompose full RGB.
   /// led_state_[led_index][channel] where channel: 0=R, 1=G, 2=B.
   uint8_t led_state_[2][3]{};
+
+  /// True when the corresponding LED's state has changed since the last flush.
+  bool led_dirty_[2]{};
 };
 
 }  // namespace m5unit_scroll
