@@ -203,7 +203,7 @@ output:
     id: backlight_pwm
     frequency: 1000Hz
 
-  # M5Stack Unit Scroll — six output channels (2 LEDs × RGB)
+  # M5Stack Unit Scroll — single RGB LED
   - platform: m5unit_scroll
     m5unit_scroll_id: unit_scroll
     led_index: 0
@@ -219,21 +219,6 @@ output:
     led_index: 0
     channel: blue
     id: led0_blue
-  - platform: m5unit_scroll
-    m5unit_scroll_id: unit_scroll
-    led_index: 1
-    channel: red
-    id: led1_red
-  - platform: m5unit_scroll
-    m5unit_scroll_id: unit_scroll
-    led_index: 1
-    channel: green
-    id: led1_green
-  - platform: m5unit_scroll
-    m5unit_scroll_id: unit_scroll
-    led_index: 1
-    channel: blue
-    id: led1_blue
 
 light:
   - platform: monochromatic
@@ -243,20 +228,13 @@ light:
     restore_mode: RESTORE_DEFAULT_ON
     default_transition_length: 250ms
 
-  # M5Stack Unit Scroll — two RGB light entities
+  # M5Stack Unit Scroll — single RGB LED
   - platform: rgb
-    name: "Scroll LED 0"
-    id: scroll_led_0
+    name: "Scroll LED"
+    id: scroll_led
     red: led0_red
     green: led0_green
     blue: led0_blue
-    restore_mode: ALWAYS_OFF
-  - platform: rgb
-    name: "Scroll LED 1"
-    id: scroll_led_1
-    red: led1_red
-    green: led1_green
-    blue: led1_blue
     restore_mode: ALWAYS_OFF
 
 time:

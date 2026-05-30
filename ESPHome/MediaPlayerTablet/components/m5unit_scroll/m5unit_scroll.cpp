@@ -8,11 +8,9 @@ static const char *const TAG = "m5unit_scroll";
 
 void M5UnitScroll::setup() {
   ESP_LOGCONFIG(TAG, "Setting up M5Unit Scroll...");
-  // Ensure both LEDs are off on every boot/reset, regardless of prior state.
-  // Without this, the encoder module (which stays powered during software resets)
-  // retains whatever LED colour it had before the reset.
+  // Ensure the LED is off on every boot/reset, regardless of prior state.
+  // The module stays powered through software resets and retains its last colour.
   this->set_led_color(0, 0x000000);
-  this->set_led_color(1, 0x000000);
 }
 
 void M5UnitScroll::dump_config() {
@@ -87,19 +85,20 @@ void M5UnitScroll::reset_encoder() {
 }
 
 void M5UnitScroll::set_led_color(uint8_t index, uint32_t color) {
-  // Official M5Unit Scroll library: setLEDColor(uint32_t color, uint8_t index)
-  // writes [R, G, B] to register RGB_LED_REG + index * 3.
-  //   LED 0 → 0x30, LED 1 → 0x33
-  // The original code wrote [index, R, G, B] to a single register, which
-  // put the index byte into the RED channel — causing both LEDs to map to the
-  // same physical LED and leaving a dim red glow after "off" writes for LED 1.
-  uint8_t data[3];
-  data[0] = (color >> 16) & 0xFF;  // R
-  data[1] = (color >> 8) & 0xFF;   // G
-  data[2] = (color >> 0) & 0xFF;   // B
+  // Official M5Unit Scroll library (M5UnitScroll.cpp):
+  //   data[0] = index;
+  //   data[1] = (color >> 16) & 0xff;  // R
+  //   data[2] = (color >> 8)  & 0xff;  // G
+  //   data[3] =  color        & 0xff;  // B
+  //   writeBytes(_addr, RGB_LED_REG, data, 4);
+  // Both LEDs share register 0x30; the index byte selects which one.
+  uint8_t data[4];
+  data[0] = index;
+  data[1] = (color >> 16) & 0xFF;  // R
+  data[2] = (color >> 8) & 0xFF;   // G
+  data[3] = (color >> 0) & 0xFF;   // B
 
-  uint8_t reg = RGB_LED_REG + index * 3;  // 0x30 for index=0, 0x33 for index=1
-  if (!this->write_bytes(reg, data, 3)) {
+  if (!this->write_bytes(RGB_LED_REG, data, 4)) {
     ESP_LOGW(TAG, "Failed to set LED %u color", index);
   }
 }

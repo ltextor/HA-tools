@@ -13,7 +13,7 @@ static const uint8_t SCROLL_ADDR = 0x40;
 
 static const uint8_t ENCODER_REG = 0x10;
 static const uint8_t BUTTON_REG = 0x20;
-static const uint8_t RGB_LED_REG = 0x30;  // 3-byte write: [R, G, B]
+static const uint8_t RGB_LED_REG = 0x30;  // 4-byte write: [index, R, G, B]
 static const uint8_t RESET_REG = 0x40;
 static const uint8_t INC_ENCODER_REG = 0x50;
 
@@ -30,10 +30,9 @@ class M5UnitScroll;
 /// Created by the `output:` platform; combine three channels per LED
 /// into a `light: platform: rgb` entity in YAML.
 ///
-/// Note: The official M5Unit Scroll Arduino library signature is
-///   setLEDColor(uint32_t color, uint8_t index = 0)
-/// which writes [R, G, B] to register RGB_LED_REG + index * 3.
-/// Two physical LEDs exist on the module at offsets 0x30 (LED 0) and 0x33 (LED 1).
+/// Protocol: official M5Unit Scroll library writes [index, R, G, B] (4 bytes)
+/// to register RGB_LED_REG (0x30). Both physical LEDs share this register;
+/// data[0] (index) selects which LED (0 or 1).
 class M5UnitScrollLEDOutput : public output::FloatOutput {
  public:
   void set_parent(M5UnitScroll *parent) { parent_ = parent; }
@@ -60,8 +59,9 @@ class M5UnitScroll : public sensor::Sensor, public PollingComponent, public i2c:
 
   void reset_encoder();
 
-  /// Write a full 24-bit colour (0x00RRGGBB) directly to one LED.
-  /// LED 0 → reg 0x30, LED 1 → reg 0x33.
+  /// Write a full 24-bit colour (0x00RRGGBB) to one LED.
+  /// Sends [index, R, G, B] to register RGB_LED_REG (0x30) — the official
+  /// M5Unit Scroll protocol. Both LEDs share the same register; index selects which.
   void set_led_color(uint8_t index, uint32_t color);
 
   /// Update one channel of an LED and mark it dirty for the next flush.
