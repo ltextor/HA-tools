@@ -348,6 +348,13 @@ binary_sensor:
   #   m5unit_encoder_id: unit_encoder
   #   name: "Encoder Button"
 
+  - platform: status
+    name: "Status"
+
+button:
+  - platform: restart
+    name: "Restart"
+
 # The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
 select:
   - platform: es8388
