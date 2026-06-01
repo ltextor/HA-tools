@@ -86,7 +86,7 @@ data:
 ```
 
 ## Response
-```
+```yaml
 media_player.local_media_player:
   title: Kasperli
   media_class: artist
@@ -130,17 +130,17 @@ media_player.local_media_player:
 ```
 
 ## Action to get tracks of album
-``
+```yaml
 action: media_player.browse_media
 target:
   entity_id: media_player.local_media_player
 data:
   media_content_type: music
   media_content_id: library://album/140
-``
+```
 
 ## Response
-``
+```yaml
 media_player.local_media_player:
   title: De chalti Vulkan / De Förschter Sager und de Holzwurm Drill
   media_class: album
@@ -181,20 +181,20 @@ media_player.local_media_player:
       can_search: false
       thumbnail: https://i.scdn.co/image/ab67616d0000b2731e2b495e7e1fd3d3fed3b178
     - ...
-``
+```
 
 ## Action to get tracks of playlist
-``
+```yaml
 action: media_player.browse_media
 target:
   entity_id: media_player.local_media_player
 data:
   media_content_type: music
   media_content_id: library://playlist/2
-``
+```
 
 ## Response
-``
+```yaml
 media_player.local_media_player:
   title: Random Artist (from library)
   media_class: playlist
@@ -235,18 +235,18 @@ media_player.local_media_player:
       can_search: false
       thumbnail: https://i.scdn.co/image/ab67616d0000b273c5f3aaf3b54a777d96ecf604
     - ...
-``
+```
 
 ## Action to get queue
-``
+```yaml
 action: music_assistant.get_queue
 target:
   entity_id: media_player.local_media_player
 data: {}
-``
+```
 
 ## Response
-``
+```yaml
 media_player.local_media_player:
   queue_id: RINCON_B8E9375DF66801400
   active: true
@@ -363,10 +363,10 @@ media_player.local_media_player:
       sample_rate: 44100
       bit_depth: 16
       bit_rate: 320
-``
+```
 
 ## Media player entity attributes
-``
+```yaml
 volume_level: 0.68
 is_volume_muted: false
 media_content_type: music
@@ -392,7 +392,7 @@ media_title: De chalti Vulkan - Teil 6
 media_artist: Kasperli/Nik Hartmann/David Bröckelmann/Fabienne Hadorn/Claudio Zuccolini
 media_album_name: De chalti Vulkan / De Förschter Sager und de Holzwurm Drill
 media_album_artist: Kasperli
-``
+```
 
 # Rules
 - Add all the LVGL and UI code at the end of the existing mediaplayertablet.yaml
