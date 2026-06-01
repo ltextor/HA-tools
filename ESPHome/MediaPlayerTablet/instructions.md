@@ -24,14 +24,17 @@ The RFID cards can contain the following keys (text items on position 0 and 1). 
 
 ## Artist card
 0   artist
+
 1   *artist ID from Music Assistant* (e.g. "library://artist/204")
 
 ## Album card
 0   album
+
 1   *album ID from Music Assistant* (e.g. "library://album/140")
 
 ## Playlist card
 0   playlist
+
 1   *playlist ID from Music Assistant* (e.g. "library://playlist/48")
 
 # UI
