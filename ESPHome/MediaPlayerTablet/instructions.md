@@ -1,7 +1,7 @@
 # General
-The project is a ESPHome tablet to play media either on the local speaker or on a home assistant media player. It runs on a M5Stack Tab5. It uses a M5Unit Encoder on I2C to control the volume and the play/pause of the media. It also has a built in battery and can be charged using USB-C. The YAML for the hardware is already implemented in mediaplayertablet.yaml.
+The project is a ESPHome tablet to play media either on the local speaker or on a (hard coded) home assistant media player. It runs on a M5Stack Tab5. It uses a M5Unit Unit Scroll encoder on I2C to control the volume and the play/pause of the media. It also has a built in battery and can be charged using USB-C. The YAML for the hardware is already implemented in mediaplayertablet.yaml.
 
-Music is initially selected by scanning a RFID card, which selects an artist, album or playlist. From there, albums and tracks can be selected in the UI. The music is streamed from a local music assistant server (which in turn uses Spotify as music source).
+Music is initially selected by scanning a RFID card, which selects an artist, album or playlist. From there, albums and tracks can be selected in the UI. The music is streamed from a local music assistant server (which in my case uses Spotify as music source, but it can access all music in the music assistant library).
 
 The device should also implement the option to set a daily listening time in home assistant (ESPHome entity exposed to home assistant, reset daily by the device itself). Once the daily listening time has passed, the media player should not play any more music and show a "sleeping" screen saver. Before going into sleep mode, the current track should be finished. A button entity exposed to home assistant allows to reset the daily counter. If the daily listening time is set to 0, no limit is enforced.
 
@@ -10,29 +10,29 @@ The device should also implement the option to set a daily listening time in hom
 ## M5Stack Tab5
 The tablet has a ESP32-P4 processor, a 5 inch touchscreen with 1280x720 px (should be used in landscape mode) and a built in battery. It has a USB-C port for charging and programming.
 
-## M5Unit Encoder
-The M5Unit Encoder is a rotary encoder with a built in button.
+## M5Stack Unit Scroll
+The M5Stack Unit Scroll is a rotary encoder with a built in button.
 It uses the I2C interface to communicate with the tablet.
 It has a RGB LED for status indication which will not be used in this project.
 
-## M5Unit RFID 2
-The M5Unit RFID 2 is a RFID reader.
+## M5Stack Unit RFID 2
+The M5Stack Unit RFID 2 is a RFID reader.
 It uses the I2C interface to communicate with the tablet.
 
 # RFID cards
-The RFID cards can contain the following keys (text items on position 0 and 1).
+The RFID cards can contain the following keys (text items on position 0 and 1). The first entry specifies if the ID is an artist, album or playlist, the second record specifies the music assistant ID to that artist/album/playlist.
 
 ## Artist card
 0   artist
-1   artist ID from Music Assistant (e.g. "library://artist/204")
+1   *artist ID from Music Assistant* (e.g. "library://artist/204")
 
 ## Album card
 0   album
-1   album ID from Music Assistant (e.g. "library://album/140")
+1   *album ID from Music Assistant* (e.g. "library://album/140")
 
 ## Playlist card
 0   playlist
-1   playlist ID from Music Assistant (e.g. "library://playlist/48")
+1   *playlist ID from Music Assistant* (e.g. "library://playlist/48")
 
 # UI
 The UI is implemented using LVGL on ESPHome. It should have a very modern, minimalistic design (similar to Apple or Android design, including glassmorphism) and should be easy to use. The UI has to be responsive and should use smooth animations. Buttons should be big enough to make it easy for children to use. It is devided in several screens:
@@ -60,13 +60,17 @@ Always show battery status (percentage and charging status) and wifi status on t
 
 ## Daily listening time
 If daily listening time is set, show the remaining listening time on the top left corner of the screen. When it has reached 0:00, show a sleeping screen saver and do not play any more music. The current track should finish playing before going into sleep mode. If no limit is set (value 0), this information should not be shown. A button entity exposed to home assistant allows to reset the daily counter.
+The internal time (RTC module) should be synced with home assistant during boot. From then on it should work independently of home assistant (until the next reboot).
 
 # Music information
-All the music information comes from Music Assistant running on a local Home Assistant server. The following actions can be used to extract albums and tracks using the media player entity of the local device. The get_queue service returns information about the queue of the media player. This can be used to get the current track and next track.
+All the music information comes from Music Assistant running on a local Home Assistant server. The following actions can be used to extract albums and tracks using the media player entity of the local device. The get_queue service returns information about the queue of the media player. The media player entity itself has attributes for album cover art, artist, track title, media position and duration, shuffle, repeat etc.
 
 # Screen off
 USB-power mode: Turn screen off when media player is not playing after 2 min idle (i.e. 2 min not playing without user interaction). Do not turn off screen when media player is playing.
 Battery-power mode: Turn screen off after 30 seconds idle (i.e. 30 seconds not playing without user interaction). Turn off screen when media player is playing after 1 min without user interaction.
+
+# Fonts
+Use gfont Roboto for text. Use gfont Material Symbols & Icons (Material+Symbols+Outlined) for icons.
 
 ## Action to get albums of an artist
 ``
@@ -358,12 +362,41 @@ media_player.local_media_player:
       bit_rate: 320
 ``
 
+## Media player entity attributes
+``
+volume_level: 0.68
+is_volume_muted: false
+media_content_type: music
+app_id: music_assistant
+source: Music Assistant Queue
+shuffle: false
+repeat: "off"
+entity_picture_local: >-
+  /api/media_player_proxy/media_player.media_player_tablet_2?token=49459178c8828038a737a4bd3897946bbcff2093ea4633577939aa225f7c63fe&cache=49c21c3dba0ae617
+mass_player_type: player
+active_queue: media_player.media_player_tablet
+device_class: speaker
+icon: mdi:speaker
+friendly_name: Media Player Tablet
+supported_features: 7796287
+entity_picture: >-
+  http://192.168.178.200:8095/imageproxy?provider=spotify--g8pFWq7V&size=500&fmt=jpeg&path=https%253A//i.scdn.co/image/ab67616d0000b2731e2b495e7e1fd3d3fed3b178
+media_content_id: spotify--g8pFWq7V://track/5q7LIsZgR0HfyOBFGGNQnd
+media_duration: 180
+media_position: 12
+media_position_updated_at: "2026-05-31T19:58:13.684445+00:00"
+media_title: De chalti Vulkan - Teil 6
+media_artist: Kasperli/Nik Hartmann/David Bröckelmann/Fabienne Hadorn/Claudio Zuccolini
+media_album_name: De chalti Vulkan / De Förschter Sager und de Holzwurm Drill
+media_album_artist: Kasperli
+``
+
 # Rules
 - Add all the LVGL and UI code at the end of the existing mediaplayertablet.yaml
 - Define custom elements (e.g. the entity of the home assistant media player and the local media player) at the beginning of the yaml (as substitutions)
 
 # Documentation
-Add a documentation .md file to explain the relevant hardware and software steps to setup this system. The documentation is for non-technical users and should only contain the steps necessary to build and setup the system. It should be possible for a user to follow the documentation and successfully build and setup the system. Do not include any additional code in the documentation, only provide the steps and explanations.
-- For the hardware part, describe the modifications made to the original M5Stack Tab5 device.
-- For the software part, describe the configuration of the ESPHome device and the home assistant instance. Mention that the device has to be allowed to make services calls to the home assistant instance.
-- Also describe that the media player (under Home Assistant MediaPlayers) has to be added to music assistant.
+Add a documentation .md file to explain the relevant hardware and software steps to setup this system. The documentation is for non-technical users and should only contain the steps necessary to build and setup the system without unnecessary technical details. It should be possible for a user to follow the documentation and successfully build and setup the system. Do not include any additional code in the documentation, only provide the steps and explanations.
+- For the hardware part, describe the required parts and how to connect them (M5Stack Tab5, Unit Scroll and RFID 2, connected by 10 cm grove cables and with a Grove T connector on the RFID 2 module).
+- For the software part, describe the configuration of the ESPHome device and the integration into home assistant. Mention that the device has to be allowed to make services calls to the home assistant instance.
+- Also describe that the media player (under Home Assistant MediaPlayers) has to be added to music assistant. This musc assistant player is the media player entity which has to be configured in mediaplayertablet.yaml.

@@ -75,6 +75,9 @@ wifi:
     ssid: "Media Player Tablet"
     password: !secret fallback_password
 
+http_request:
+  verify_ssl: false
+
 captive_portal:
 
 psram:
@@ -171,7 +174,7 @@ display:
       pi4ioe5v6408: pi4ioe1
       number: 4
       # inverted: true
-    show_test_card: true
+    show_test_card: false
     # auto_clear_enabled: false
     # update_interval: never
 
@@ -563,6 +566,10 @@ font:
     bpp: 4  # 4-bit greyscale anti-aliasing
     glyphsets:
       - GF_Latin_Core
+  - file: "gfonts://Noto Emoji"
+    id: icon_font_24
+    size: 24
+    bpp: 4  # 4-bit greyscale anti-aliasing
     glyphs:
       - "\U0001F50A"
   - file: "gfonts://Roboto"
@@ -623,13 +630,38 @@ text_sensor:
               if (x.empty() || x == "unknown" || x == "unavailable") return track;
               return x + " - " + track;
 
-image:
-  defaults:
-    type: rgb565
-    byte_order: little_endian
+  - platform: homeassistant
+    id: current_picture
+    entity_id: ${media_player_entity}
+    attribute: entity_picture
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+            then:
+              - online_image.set_url:
+                  id: album_art_img
+                  url: !lambda 'return x;'
+              - component.update: album_art_img
+            else:
+              - lvgl.widget.hide: album_art_widget
+
+online_image:
+  - id: album_art_img
+    type: RGB
+    url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
+    format: jpg
+    update_interval: never
+    resize: 200x200
+    on_download_finished:
+      then:
+        - lvgl.image.update:
+            id: album_art_widget
+            src: album_art_img
+        - lvgl.widget.show: album_art_widget
 
 lvgl:
-  byte_order: little_endian 
   rotation: 90
   bottom_layer:
     bg_color: 0x121212
@@ -689,6 +721,12 @@ lvgl:
                           - label:
                               text: "Currently Playing"
                               styles: [label_style]
+                          - image:
+                              id: album_art_widget
+                              src: album_art_img
+                              width: 200
+                              height: 200
+                              hidden: true
                           - label:
                               id: track_label
                               text: "No Track Playing"
@@ -739,7 +777,7 @@ lvgl:
             widgets:
               - label:
                   text: "\U0001F50A"
-                  text_font: roboto_font_24
+                  text_font: icon_font_24
                   text_color: 0x00FF88
               - bar:
                   id: volume_bar
