@@ -23,19 +23,19 @@ It uses the I2C interface to communicate with the tablet.
 The RFID cards can contain the following keys (text items on position 0 and 1). The first entry specifies if the ID is an artist, album or playlist, the second record specifies the music assistant ID to that artist/album/playlist.
 
 ## Artist card
-0   artist
-
-1   *artist ID from Music Assistant* (e.g. "library://artist/204")
+| 0 | artist |
+|---|---|
+| 1 | *artist ID from Music Assistant* (e.g. "library://artist/204") |
 
 ## Album card
-0   album
-
-1   *album ID from Music Assistant* (e.g. "library://album/140")
+| 0 | album |
+|---|---|
+| 1 | *album ID from Music Assistant* (e.g. "library://album/140") |
 
 ## Playlist card
-0   playlist
-
-1   *playlist ID from Music Assistant* (e.g. "library://playlist/48")
+| 0 | playlist |
+|---|---|
+| 1 | *playlist ID from Music Assistant* (e.g. "library://playlist/48") |
 
 # UI
 The UI is implemented using LVGL on ESPHome. It should have a very modern, minimalistic design (similar to Apple or Android design, including glassmorphism) and should be easy to use. The UI has to be responsive and should use smooth animations. Buttons should be big enough to make it easy for children to use. It is devided in several screens:
