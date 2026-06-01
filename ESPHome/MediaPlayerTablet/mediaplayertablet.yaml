@@ -2,6 +2,7 @@ substitutions:
   device_name: "media-player-tablet"
   device_friendly_name: "Media Player Tablet"
   media_player_entity: "media_player.media_player_tablet_2"  # Music Assistant version of the Home Assistant Media Player (add to Music Assistant manually)
+  external_media_player_entity: "media_player.wohnzimmer_3"  # External media player (music assistant version) which can be used as external speaker
 
 globals:
   # Tracks the current volume (0.0–1.0). Initialised to -1.0 as a sentinel
@@ -186,17 +187,11 @@ touchscreen:
     reset_pin:
       pi4ioe5v6408: pi4ioe1
       number: 5
-    # NB: Those min/max values are *after* swapping (raw x is 0..720).
     calibration:
       x_min: 0
-      x_max: 1280
+      x_max: 720
       y_min: 0
-      y_max: 720
-    # Landscape orientation
-    transform:
-      swap_xy: true
-      mirror_x: true
-      mirror_y: false
+      y_max: 1280
 
 output:
   - platform: ledc
@@ -725,7 +720,13 @@ lvgl:
                               src: album_art_img
                               width: 200
                               height: 200
+                              radius: 12
                               hidden: true
+                              on_click:
+                                - homeassistant.service:
+                                    service: media_player.media_play_pause
+                                    data:
+                                      entity_id: ${media_player_entity}
                           - label:
                               id: track_label
                               text: "No Track Playing"
