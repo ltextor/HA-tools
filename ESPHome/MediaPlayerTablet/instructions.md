@@ -76,17 +76,17 @@ Battery-power mode: Turn screen off after 30 seconds idle (i.e. 30 seconds not p
 Use gfont Roboto for text. Use gfont Material Symbols & Icons (Material+Symbols+Outlined) for icons.
 
 ## Action to get albums of an artist
-``
+```yaml
 action: media_player.browse_media
 target:
   entity_id: media_player.local_media_player
 data:
   media_content_type: music
   media_content_id: library://artist/244
-``
+```
 
 ## Response
-``
+```
 media_player.local_media_player:
   title: Kasperli
   media_class: artist
@@ -127,7 +127,7 @@ media_player.local_media_player:
       can_search: false
       thumbnail: https://i.scdn.co/image/ab67616d0000b273e2dde61274be185d8f3ca167
     - ...
-``
+```
 
 ## Action to get tracks of album
 ``
