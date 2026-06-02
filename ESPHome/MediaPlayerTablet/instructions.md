@@ -20,22 +20,26 @@ The M5Stack Unit RFID 2 is a RFID reader.
 It uses the I2C interface to communicate with the tablet.
 
 # RFID cards
-The RFID cards can contain the following keys (text items on position 0 and 1). The first entry specifies if the ID is an artist, album or playlist, the second record specifies the music assistant ID to that artist/album/playlist.
+The RFID cards have to be added as tags to home assistant. Simply scan them in home assistant and assign the music id (e.g. "library://artist/204", "library://album/140", "library://playlist/48") as the name of the tag. 
 
-## Artist card
-| 0 | artist |
-|---|---|
-| 1 | *artist ID from Music Assistant* (e.g. "library://artist/204") |
+Because ESPHome devices cannot read the name of a tag directly, a Home Assistant automation is used to read the tag name and call the ESPHome service to play the media. To get the device id, go to developer tools and listen for the tag_scanned event. Then scan a tag on your device and it will show the device id.
 
-## Album card
-| 0 | album |
-|---|---|
-| 1 | *album ID from Music Assistant* (e.g. "library://album/140") |
-
-## Playlist card
-| 0 | playlist |
-|---|---|
-| 1 | *playlist ID from Music Assistant* (e.g. "library://playlist/48") |
+```yaml
+alias: Media Player Tablet tag scanned
+description: ""
+triggers:
+  - trigger: event
+    event_type: tag_scanned
+    event_data:
+      device_id: your_esphome_device_id
+conditions: []
+actions:
+  - action: esphome.media_player_tablet_play_nfc_media
+    metadata: {}
+    data:
+      media_id: "{{ trigger.event.data.name }}"
+mode: restart
+```
 
 # UI
 The UI is implemented using LVGL on ESPHome. It should have a very modern, minimalistic design (similar to Apple or Android design, including glassmorphism) and should be easy to use. The UI has to be responsive and should use smooth animations. Buttons should be big enough to make it easy for children to use. It is devided in several screens:

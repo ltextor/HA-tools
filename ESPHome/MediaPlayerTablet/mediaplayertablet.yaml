@@ -2,7 +2,7 @@ substitutions:
   device_name: "media-player-tablet"
   device_friendly_name: "Media Player Tablet"
   media_player_entity: "media_player.media_player_tablet_2"  # Music Assistant version of the Home Assistant Media Player (add to Music Assistant manually)
-  external_media_player_entity: "media_player.wohnzimmer_3"  # External media player (music assistant version) which can be used as external speaker
+  external_media_player_entity: "media_player.wohnzimmer_3"  # External media player (Music Assistant version) which can be used as external speaker
 
 globals:
   # Tracks the current volume (0.0–1.0). Initialised to -1.0 as a sentinel
@@ -64,6 +64,20 @@ logger:
 api:
   encryption:
     key: !secret mediaplayertablet_api_key
+  services:
+    - service: play_nfc_media
+      variables:
+        media_id: string
+      then:
+        - homeassistant.action:
+            action: media_player.play_media
+            data:
+              entity_id: ${media_player_entity}
+              enqueue: replace
+              media_content_type: music
+            data_template:
+              media_content_id: !lambda 'return media_id;'
+
 
 ota:
   - platform: esphome
@@ -540,6 +554,12 @@ rc522_i2c:
   on_tag:
     then:
       - homeassistant.tag_scanned: !lambda 'return x;'
+  on_tag_removed:
+    then:
+      - homeassistant.service:
+          service: media_player.media_pause
+          data:
+            entity_id: ${media_player_entity}
 
 # M5Stack unit scroll
 external_components:
