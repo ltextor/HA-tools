@@ -530,11 +530,22 @@ sensor:
                           return std::string(buf);
                     - script.execute: show_volume_overlay
 
-
-# external_components:
-#   - source: github://m5stack/esphome-yaml/components
-#     components: [m5unit_encoder]
-#     refresh: 0s 
+  # wifi sensors
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+    
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+    entity_category: "diagnostic"
+    device_class: ""
+    icon: "mdi:wifi"
 
 # Media player
 media_player:
