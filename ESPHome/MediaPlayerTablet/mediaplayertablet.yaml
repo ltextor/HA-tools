@@ -1,3 +1,15 @@
+# implemented
+# display off when inactive
+# wakeup on touchscreen, encoder turn and press, nfc activity (also reset inactivity counter for encoder and nfc)
+
+# to do
+# screensaver during night
+# keep display on when playing and power connected
+# wifi and battery icons
+# basic pages
+
+
+
 substitutions:
   device_name: "media-player-tablet"
   device_friendly_name: "Media Player Tablet"
@@ -219,7 +231,6 @@ display:
       number: 4
     show_test_card: false
 
-
 touchscreen:
   - platform: st7123
     id: touch
@@ -235,6 +246,14 @@ touchscreen:
       x_max: 720
       y_min: 0
       y_max: 1280
+    on_release:
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - logger.log: "LVGL resuming"
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - light.turn_on: backlight
 
 output:
   - platform: ledc
@@ -377,6 +396,14 @@ binary_sensor:
     name: "Unit Scroll Button"
     on_press:
       then:
+        - if:
+            condition: lvgl.is_paused
+            then:
+              - logger.log: "LVGL resuming"
+              - lvgl.resume:
+              - lvgl.widget.redraw:
+              - light.turn_on: backlight
+        - lambda: 'lv_disp_trig_activity(NULL);'  # resets LVGL idle timer
         - homeassistant.service:
             service: media_player.media_play_pause
             data:
@@ -450,6 +477,14 @@ sensor:
       # on_value only fires when non-zero (the C++ component filters idle polls)
       on_value:
         then:
+          - if:
+              condition: lvgl.is_paused
+              then:
+                - logger.log: "LVGL resuming"
+                - lvgl.resume:
+                - lvgl.widget.redraw:
+                - light.turn_on: backlight
+          - lambda: 'lv_disp_trig_activity(NULL);'  # resets LVGL idle timer
           - if:
               condition:
                 # Guard: ignore until HA has synced the initial volume after boot
@@ -594,12 +629,28 @@ rc522_i2c:
   on_tag:
     then:
       - homeassistant.tag_scanned: !lambda 'return x;'
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - logger.log: "LVGL resuming"
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - light.turn_on: backlight
+      - lambda: 'lv_disp_trig_activity(NULL);'  # resets LVGL idle timer
   on_tag_removed:
     then:
       - homeassistant.service:
           service: media_player.media_pause
           data:
             entity_id: ${media_player_entity}
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - logger.log: "LVGL resuming"
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - light.turn_on: backlight
+      - lambda: 'lv_disp_trig_activity(NULL);'  # resets LVGL idle timer
 
 # M5Stack unit scroll
 external_components:
@@ -717,6 +768,12 @@ online_image:
 lvgl:
   byte_order: little_endian
   rotation: 90
+  on_idle:
+    timeout: 30s # to do > no timeout when playing and power connected
+    then:
+      - logger.log: "LVGL is idle"
+      - light.turn_off: backlight
+      - lvgl.pause:
   bottom_layer:
     bg_color: 0x121212
   style_definitions:
