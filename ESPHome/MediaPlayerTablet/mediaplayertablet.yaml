@@ -102,14 +102,14 @@ api:
             condition:
               lambda: 'return media_id.find("artist") != std::string::npos;'
             then:
-              - lvgl.widget.hide: page_nfc
-              - lvgl.widget.hide: page_player
-              - lvgl.widget.show: page_artist
-              - script.execute: fetch_artist_albums
+              - lvgl.page.show:
+                  id: page_artist
+                  animation: MOVE_TOP
+              # - script.execute: fetch_artist_albums
             else:
-              - lvgl.widget.hide: page_nfc
-              - lvgl.widget.hide: page_artist
-              - lvgl.widget.show: page_player
+              - lvgl.page.show:
+                  id: page_player
+                  animation: MOVE_TOP
               - homeassistant.action:
                   action: media_player.play_media
                   data:
@@ -199,13 +199,13 @@ audio_dac:
     id: es8388_dac
     i2c_id: bsp_bus
 
-microphone:
-  - platform: i2s_audio
-    id: tab5_microphone
-    i2s_din_pin: GPIO28
-    sample_rate: 16000
-    bits_per_sample: 16bit
-    adc_type: external
+# microphone:
+#   - platform: i2s_audio
+#     id: tab5_microphone
+#     i2s_din_pin: GPIO28
+#     sample_rate: 16000
+#     bits_per_sample: 16bit
+#     adc_type: external
 
 speaker:
   - platform: i2s_audio
@@ -262,21 +262,21 @@ output:
     frequency: 1000Hz
 
   # M5Stack Unit Scroll — single RGB LED
-  - platform: m5unit_scroll
-    m5unit_scroll_id: unit_scroll
-    led_index: 0
-    channel: red
-    id: led0_red
-  - platform: m5unit_scroll
-    m5unit_scroll_id: unit_scroll
-    led_index: 0
-    channel: green
-    id: led0_green
-  - platform: m5unit_scroll
-    m5unit_scroll_id: unit_scroll
-    led_index: 0
-    channel: blue
-    id: led0_blue
+  # - platform: m5unit_scroll
+  #   m5unit_scroll_id: unit_scroll
+  #   led_index: 0
+  #   channel: red
+  #   id: led0_red
+  # - platform: m5unit_scroll
+  #   m5unit_scroll_id: unit_scroll
+  #   led_index: 0
+  #   channel: green
+  #   id: led0_green
+  # - platform: m5unit_scroll
+  #   m5unit_scroll_id: unit_scroll
+  #   led_index: 0
+  #   channel: blue
+  #   id: led0_blue
 
 light:
   - platform: monochromatic
@@ -287,14 +287,14 @@ light:
     default_transition_length: 250ms
 
   # M5Stack Unit Scroll — single RGB LED
-  - platform: rgb
-    name: "Scroll LED"
-    id: scroll_led
-    red: led0_red
-    green: led0_green
-    blue: led0_blue
-    restore_mode: ALWAYS_OFF
-    default_transition_length: 0s
+  # - platform: rgb
+  #   name: "Scroll LED"
+  #   id: scroll_led
+  #   red: led0_red
+  #   green: led0_green
+  #   blue: led0_blue
+  #   restore_mode: ALWAYS_OFF
+  #   default_transition_length: 0s
 
 time:
   - platform: rx8130
@@ -362,16 +362,14 @@ binary_sensor:
       pi4ioe5v6408: pi4ioe2
       number: 6
       mode: INPUT_PULLDOWN
-    on_state:
+    on_press:
       then:
-        - lvgl.label.update:
-            id: battery_label
-            text: !lambda |-
-              char buf[32];
-              float pct = id(battery_percentage).state;
-              if (std::isnan(pct)) pct = 0.0;
-              sprintf(buf, "%.1f%%%s", pct, x ? " (Charging)" : "");
-              return std::string(buf);
+        - lvgl.widget.show: label_battery_charging
+        - lvgl.widget.hide: label_battery_status
+    on_release:
+      then:
+        - lvgl.widget.show: label_battery_status
+        - lvgl.widget.hide: label_battery_charging
 
   - platform: gpio
     id: headphone_detect
@@ -535,23 +533,17 @@ sensor:
     update_interval: 60s
     unit_of_measurement: "%"
     accuracy_decimals: 1
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: battery_label
-            text: !lambda |-
-              char buf[32];
-              float pct = x;
-              if (std::isnan(pct)) pct = 0.0;
-              bool is_charging = id(charging).state;
-              sprintf(buf, "%.1f%%%s", pct, is_charging ? " (Charging)" : "");
-              return std::string(buf);
-
-# M5Stack unit encoder
-#   - platform: m5unit_encoder
-#     id: unit_encoder
-#     name: "Encoder Value"
-#     i2c_id: external_i2c
+    # on_value:
+    #   then:
+    #     - lvgl.label.update:
+    #         id: battery_label
+    #         text: !lambda |-
+    #           char buf[32];
+    #           float pct = x;
+    #           if (std::isnan(pct)) pct = 0.0;
+    #           bool is_charging = id(charging).state;
+    #           sprintf(buf, "%.1f%%%s", pct, is_charging ? " (Charging)" : "");
+    #           return std::string(buf);
 
 # HA volume level — numeric 0.0–1.0, synced from the media player entity.
 # Used to keep current_volume in sync with external (HA-side) changes.
@@ -651,6 +643,9 @@ rc522_i2c:
             - lvgl.widget.redraw:
             - light.turn_on: backlight
       - lambda: 'lv_disp_trig_activity(NULL);'  # resets LVGL idle timer
+      - lvgl.page.show:
+          id: page_nfc
+          animation: MOVE_TOP
 
 # M5Stack unit scroll
 external_components:
@@ -664,24 +659,55 @@ external_components:
     components: [st7123]
 
 font:
-  - file: "gfonts://Roboto"
-    id: roboto_font_24
-    size: 24
-    bpp: 4  # 4-bit greyscale anti-aliasing
-    glyphsets:
-      - GF_Latin_Core
-  - file: "gfonts://Noto Emoji"
-    id: icon_font_24
-    size: 24
-    bpp: 4  # 4-bit greyscale anti-aliasing
-    glyphs:
-      - "\U0001F50A"
-  - file: "gfonts://Roboto"
-    id: roboto_font_48
+  - file: "gfonts://Material Symbols Outlined"
+    id: material_icons_48
     size: 48
-    bpp: 4  # 4-bit greyscale anti-aliasing
-    glyphsets:
-      - GF_Latin_Core
+    bpp: 4
+    glyphs:
+      - "\uf30d" # battery_empty
+      - "\uf30c" # battery_1
+      - "\uf30b" # battery_2
+      - "\uf30a" # battery_3
+      - "\uf309" # battery_4
+      - "\uf308" # battery_5
+      - "\uf307" # battery_6
+      - "\uf304" # battery_full
+      - "\uf305" # battery_charging
+      - "\uf302" # battery_unknown
+      - "\ue4ca" # wifi 1 bar
+      - "\ue4d9" # wifi 2 bar
+      - "\ue63e" # wifi 3 bar
+      - "\ue648" # no wifi
+      - "\uf34f" # moon stars (sleeping)
+      - "\ue32d" # speaker
+      - "\ue043" # shuffle
+      - "\ue040" # repeat
+      - "\ue041" # repeat_one
+      - "\ue037" # play
+      - "\ue034" # pause
+      - "\ue01f" # previous
+      - "\ue020" # next
+      - "\ue050" # volume
+  - file: "gfonts://JetBrains Mono"
+    id: jetbrains_24
+    size: 24
+    bpp: 4
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://Manrope"
+    id: manrope_16
+    size: 16
+    bpp: 4
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://Manrope"
+    id: manrope_24
+    size: 24
+    bpp: 4
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://Manrope"
+    id: manrope_48
+    size: 48
+    bpp: 4
+    glyphsets: [GF_Latin_Core]
 
 script:
   # Shows the volume overlay and auto-hides it after 2 s.
@@ -704,52 +730,90 @@ script:
           value: 'false'
 
 text_sensor:
+  # Hidden trigger: watches the media_player track id and refreshes queue sensors on change
   - platform: homeassistant
-    id: current_track
+    id: mp_content_id
     entity_id: ${media_player_entity}
-    attribute: media_title
+    attribute: media_content_id
+    internal: true
     on_value:
-      then:
-        - lvgl.label.update:
-            id: track_label
-            text: !lambda |-
-              std::string artist = id(current_artist).state;
-              if (artist == "unknown" || artist == "unavailable") artist = "";
-              if (x.empty() || x == "unknown" || x == "unavailable") return std::string("No Track Playing");
-              if (artist.empty()) return x;
-              return artist + " - " + x;
+      - homeassistant.action:
+          action: music_assistant.get_queue
+          data:
+            entity_id: ${media_player_entity}
+          capture_response: true
+          on_success:
+            - lambda: |-
+                JsonObjectConst q = response["response"]["${media_player_entity}"];
 
-  - platform: homeassistant
+                // ---- CURRENT ----
+                if (!q["current_item"].isNull()) {
+                  JsonObjectConst mi = q["current_item"]["media_item"];
+
+                  std::string artists;
+                  for (JsonVariantConst a : mi["artists"].as<JsonArrayConst>()) {
+                    if (!artists.empty()) artists += " / ";
+                    artists += a["name"].as<std::string>();
+                  }
+                  id(current_artist).publish_state(artists);
+                  id(current_track).publish_state(mi["name"].as<std::string>());
+
+                  std::string art;
+                  if (!mi["album"]["image"].isNull())
+                    art = mi["album"]["image"].as<std::string>();
+                  else if (!mi["image"].isNull())
+                    art = mi["image"].as<std::string>();
+                  id(current_artwork).publish_state(art);
+                } else {
+                  id(current_artist).publish_state("");
+                  id(current_track).publish_state("");
+                  id(current_artwork).publish_state("");
+                }
+
+                // ---- NEXT ----
+                if (!q["next_item"].isNull()) {
+                  JsonObjectConst mi = q["next_item"]["media_item"];
+
+                  std::string artists;
+                  for (JsonVariantConst a : mi["artists"].as<JsonArrayConst>()) {
+                    if (!artists.empty()) artists += " / ";
+                    artists += a["name"].as<std::string>();
+                  }
+                  id(next_artist).publish_state(artists);
+                  id(next_track).publish_state(mi["name"].as<std::string>());
+
+                  std::string art;
+                  if (!mi["album"]["image"].isNull())
+                    art = mi["album"]["image"].as<std::string>();
+                  else if (!mi["image"].isNull())
+                    art = mi["image"].as<std::string>();
+                  id(next_artwork).publish_state(art);
+                } else {
+                  id(next_artist).publish_state("");
+                  id(next_track).publish_state("");
+                  id(next_artwork).publish_state("");
+                }
+          on_error:
+            - logger.log: "get_queue action failed"
+  # sensors for current and next track info, updated by the above trigger
+  - platform: template
     id: current_artist
-    entity_id: ${media_player_entity}
-    attribute: media_artist
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: track_label
-            text: !lambda |-
-              std::string track = id(current_track).state;
-              if (track == "unknown" || track == "unavailable") track = "";
-              if (track.empty() || track == "No Track Playing") return std::string("No Track Playing");
-              if (x.empty() || x == "unknown" || x == "unavailable") return track;
-              return x + " - " + track;
-
-  - platform: homeassistant
-    id: current_picture
-    entity_id: ${media_player_entity}
-    attribute: entity_picture
-    on_value:
-      then:
-        - if:
-            condition:
-              lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
-            then:
-              - online_image.set_url:
-                  id: album_art_img
-                  url: !lambda 'return x;'
-              - component.update: album_art_img
-            else:
-              - lvgl.widget.hide: album_art_widget
+    name: "Current Artist"
+  - platform: template
+    id: current_track
+    name: "Current Track"
+  - platform: template
+    id: current_artwork
+    name: "Current Artwork"
+  - platform: template
+    id: next_artist
+    name: "Next Artist"
+  - platform: template
+    id: next_track
+    name: "Next Track"
+  - platform: template
+    id: next_artwork
+    name: "Next Artwork"
 
 online_image:
   - id: album_art_img
@@ -758,158 +822,269 @@ online_image:
     format: jpg
     update_interval: never
     resize: 200x200
-    on_download_finished:
-      then:
-        - lvgl.image.update:
-            id: album_art_widget
-            src: album_art_img
-        - lvgl.widget.show: album_art_widget
+    # on_download_finished:
+    #   then:
+    #     - lvgl.image.update:
+    #         id: album_art_widget
+    #         src: album_art_img
+    #     - lvgl.widget.show: album_art_widget
 
 lvgl:
   byte_order: little_endian
   rotation: 90
+  # disp_bg_color: black
   on_idle:
     timeout: 30s # to do > no timeout when playing and power connected
     then:
       - logger.log: "LVGL is idle"
       - light.turn_off: backlight
       - lvgl.pause:
-  bottom_layer:
-    bg_color: 0x121212
+  theme:
+    dark_mode: true
+    # page:
+      # bg_opa: TRANSP
   style_definitions:
-    - id: title_style
-      text_font: roboto_font_48
-      text_color: 0xEAEAEA
     - id: label_style
-      text_font: roboto_font_24
+      text_font: jetbrains_24
       text_color: 0xA0A0A0
-    - id: value_style
-      text_font: roboto_font_48
-      text_color: 0x00FF88
-    - id: card_style
-      bg_color: 0x1E1E1E
-      bg_opa: 80%
-      border_width: 1
-      border_color: 0x333333
-      radius: 12
-      pad_all: 20
+    - id: icon_48_style
+      text_font: material_icons_48
+      text_color: 0xDDDDDD
+  bottom_layer:
+    # bg_color: black
+  top_layer:
+    # bg_opa: TRANSP
+    pad_all: 10
+    widgets:
+      - label:
+          id: top_timer_label
+          text: "0:00"
+          styles: [label_style]
+          align: TOP_LEFT
+          x: 5
+      - label:
+          id: label_wifi
+          text: "\ue63e" # wifi 3 bar (initial state)
+          styles: [icon_48_style]
+          align: TOP_RIGHT
+          x: -5
+          hidden: true
+      - label:
+          id: label_notconnected
+          text: "\ue648" # not connected
+          styles: [icon_48_style]
+          align: TOP_RIGHT
+          x: -5
+      - label:
+          id: label_battery_status
+          text: "\uf302" # battery unknown (initial state, before voltage is read)
+          styles: [icon_48_style]
+          align_to:
+            id: label_wifi
+            align: OUT_LEFT_MID
+            x: -30
+      - label:
+          id: label_battery_charging
+          text: "\uf305" # battery charging
+          styles: [icon_48_style]
+          align_to:
+            id: label_wifi
+            align: OUT_LEFT_MID
+            x: -30
+      # ----- VOLUME OVERLAY -----
+      - obj:
+          id: volume_overlay
+          hidden: true
+          width: 680
+          height: 120
+          align: CENTER
+          # bg_color: 0x1E1E1E
+          bg_opa: 80%
+          radius: 20
+          pad_left: 24
+          pad_right: 24
+          layout:
+            type: flex
+            flex_flow: row
+            flex_align_cross: center
+            flex_align_main: space_between
+          widgets:
+            - label:
+                text: "\ue050" # volume
+                styles: [icon_48_style]
+            - bar:
+                id: volume_bar
+                width: 440
+                height: 30
+                value: 0
+                bg_color: 0x333333
+                bg_opa: COVER
+                indicator:
+                  bg_color: 0xFF00FF
+                  bg_opa: COVER
+            - label:
+                id: volume_label
+                text: "50%"
+                styles: [label_style]
+                width: 120
+                text_align: RIGHT
   pages:
-    - id: main_page
+    - id: page_nfc
       widgets:
-        - obj:
-            width: 1240
-            height: 680
+        - label:
+            text: "Scan NFC Tag to Play"
             align: CENTER
-            layout:
-              type: flex
-              flex_flow: column
-              flex_align_main: space_evenly
-              flex_align_cross: center
-            widgets:
-              - label:
-                  text: "System Test Screen"
-                  styles: [title_style]
-              - obj:
-                  width: 1200
-                  height: 450
-                  bg_opa: 0%
-                  layout:
-                    type: flex
-                    flex_flow: row
-                    flex_align_main: space_around
-                    flex_align_cross: center
-                  widgets:
-                    - obj:
-                        width: 550
-                        height: 380
-                        styles: [card_style]
-                        layout:
-                          type: flex
-                          flex_flow: column
-                          flex_align_main: space_around
-                          flex_align_cross: center
-                        widgets:
-                          - label:
-                              text: "Currently Playing"
-                              styles: [label_style]
-                          - image:
-                              id: album_art_widget
-                              src: album_art_img
-                              width: 200
-                              height: 200
-                              radius: 12
-                              hidden: true
-                              on_click:
-                                - homeassistant.service:
-                                    service: media_player.media_play_pause
-                                    data:
-                                      entity_id: ${media_player_entity}
-                          - label:
-                              id: track_label
-                              text: "No Track Playing"
-                              styles: [title_style]
-                              width: 500
-                              long_mode: SCROLL_CIRCULAR
-                    - obj:
-                        width: 550
-                        height: 380
-                        styles: [card_style]
-                        layout:
-                          type: flex
-                          flex_flow: column
-                          flex_align_main: space_around
-                          flex_align_cross: center
-                        widgets:
-                          - label:
-                              text: "Battery Status"
-                              styles: [label_style]
-                          - label:
-                              id: battery_label
-                              text: "--- %"
-                              styles: [value_style]
+            styles: [label_style]
+    - id: page_artist
+      widgets:
+        - label:
+            text: "No Artist Playing"
+            align: CENTER
+            styles: [label_style]
+    - id: page_player
+      widgets:
+        - label:
+            text: "No Track Playing"
+            align: CENTER
+            styles: [label_style]
 
-        # Volume overlay — floats over page content, hidden until encoder or HA changes volume.
-        # mode: restart in the script ensures it auto-hides 2 s after the last step.
-        - obj:
-            id: volume_overlay
-            hidden: true
-            width: 680
-            height: 70
-            align: BOTTOM_MID
-            y: -20
-            bg_color: 0x1E1E1E
-            bg_opa: 95%
-            border_width: 1
-            border_color: 0x333333
-            radius: 12
-            pad_left: 16
-            pad_right: 16
-            pad_top: 0
-            pad_bottom: 0
-            layout:
-              type: flex
-              flex_flow: row
-              flex_align_cross: center
-              flex_align_main: space_between
-            widgets:
-              - label:
-                  text: "\U0001F50A"
-                  text_font: icon_font_24
-                  text_color: 0x00FF88
-              - bar:
-                  id: volume_bar
-                  width: 490
-                  height: 16
-                  min_value: 0
-                  max_value: 100
-                  value: 50
-                  indicator:
-                    bg_color: 0x00FF88
-                  bg_color: 0x333333
-              - label:
-                  id: volume_label
-                  text: "50%"
-                  text_font: roboto_font_24
-                  text_color: 0xA0A0A0
-                  width: 70
-                  text_align: RIGHT
+
+  # bottom_layer:
+  #   bg_color: 0x121212
+  # style_definitions:
+  #   - id: title_style
+  #     text_font: roboto_font_48
+  #     text_color: 0xEAEAEA
+  #   - id: label_style
+  #     text_font: roboto_font_24
+  #     text_color: 0xA0A0A0
+  #   - id: value_style
+  #     text_font: roboto_font_48
+  #     text_color: 0x00FF88
+  #   - id: card_style
+  #     bg_color: 0x1E1E1E
+  #     bg_opa: 80%
+  #     border_width: 1
+  #     border_color: 0x333333
+  #     radius: 12
+  #     pad_all: 20
+  # pages:
+  #   - id: main_page
+  #     widgets:
+  #       - obj:
+  #           width: 1240
+  #           height: 680
+  #           align: CENTER
+  #           layout:
+  #             type: flex
+  #             flex_flow: column
+  #             flex_align_main: space_evenly
+  #             flex_align_cross: center
+  #           widgets:
+  #             - label:
+  #                 text: "System Test Screen"
+  #                 styles: [title_style]
+  #             - obj:
+  #                 width: 1200
+  #                 height: 450
+  #                 bg_opa: 0%
+  #                 layout:
+  #                   type: flex
+  #                   flex_flow: row
+  #                   flex_align_main: space_around
+  #                   flex_align_cross: center
+  #                 widgets:
+  #                   - obj:
+  #                       width: 550
+  #                       height: 380
+  #                       styles: [card_style]
+  #                       layout:
+  #                         type: flex
+  #                         flex_flow: column
+  #                         flex_align_main: space_around
+  #                         flex_align_cross: center
+  #                       widgets:
+  #                         - label:
+  #                             text: "Currently Playing"
+  #                             styles: [label_style]
+  #                         - image:
+  #                             id: album_art_widget
+  #                             src: album_art_img
+  #                             width: 200
+  #                             height: 200
+  #                             radius: 12
+  #                             hidden: true
+  #                             on_click:
+  #                               - homeassistant.service:
+  #                                   service: media_player.media_play_pause
+  #                                   data:
+  #                                     entity_id: ${media_player_entity}
+  #                         - label:
+  #                             id: track_label
+  #                             text: "No Track Playing"
+  #                             styles: [title_style]
+  #                             width: 500
+  #                             long_mode: SCROLL_CIRCULAR
+  #                   - obj:
+  #                       width: 550
+  #                       height: 380
+  #                       styles: [card_style]
+  #                       layout:
+  #                         type: flex
+  #                         flex_flow: column
+  #                         flex_align_main: space_around
+  #                         flex_align_cross: center
+  #                       widgets:
+  #                         - label:
+  #                             text: "Battery Status"
+  #                             styles: [label_style]
+  #                         - label:
+  #                             id: battery_label
+  #                             text: "--- %"
+  #                             styles: [value_style]
+
+  #       # Volume overlay — floats over page content, hidden until encoder or HA changes volume.
+  #       # mode: restart in the script ensures it auto-hides 2 s after the last step.
+  #       - obj:
+  #           id: volume_overlay
+  #           hidden: true
+  #           width: 680
+  #           height: 70
+  #           align: BOTTOM_MID
+  #           y: -20
+  #           bg_color: 0x1E1E1E
+  #           bg_opa: 95%
+  #           border_width: 1
+  #           border_color: 0x333333
+  #           radius: 12
+  #           pad_left: 16
+  #           pad_right: 16
+  #           pad_top: 0
+  #           pad_bottom: 0
+  #           layout:
+  #             type: flex
+  #             flex_flow: row
+  #             flex_align_cross: center
+  #             flex_align_main: space_between
+  #           widgets:
+  #             - label:
+  #                 text: "\U0001F50A"
+  #                 text_font: icon_font_24
+  #                 text_color: 0x00FF88
+  #             - bar:
+  #                 id: volume_bar
+  #                 width: 490
+  #                 height: 16
+  #                 min_value: 0
+  #                 max_value: 100
+  #                 value: 50
+  #                 indicator:
+  #                   bg_color: 0x00FF88
+  #                 bg_color: 0x333333
+  #             - label:
+  #                 id: volume_label
+  #                 text: "50%"
+  #                 text_font: roboto_font_24
+  #                 text_color: 0xA0A0A0
+  #                 width: 70
+  #                 text_align: RIGHT
