@@ -86,7 +86,7 @@ Battery-power mode: Turn screen off after 30 seconds idle (i.e. 30 seconds not p
 When the screen is turned off, the screen should wake up immediately when the user interacts with the screen (i.e. touches the screen) or when the media player starts playing music.
 
 # Fonts & Colors
-Use gfont Manrope for text and Jetbrains Mono for labels (see Google Stitch design sketch).
+Use gfont Manrope for text and Jetbrains Mono for labels (see Google Stitch design sketch). Use 4-bit greyscale anti-aliasing for all fonts and icons.
 
 Use magenta highlight color (see Google Stitch design sketch).
 

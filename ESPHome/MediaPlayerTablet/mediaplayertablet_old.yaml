@@ -1,0 +1,1522 @@
+substitutions:
+  device_name: "media-player-tablet"
+  device_friendly_name: "Media Player Tablet"
+  media_player_entity: "media_player.media_player_tablet_2"  # Music Assistant version of the Home Assistant Media Player (add to Music Assistant manually)
+  external_media_player_entity: "media_player.wohnzimmer_3"  # External media player (Music Assistant version) which can be used as external speaker
+  ha_url: !secret ha_url
+  ha_token: !secret ha_token
+
+globals:
+  # Tracks the current volume (0.0–1.0). Initialised to -1.0 as a sentinel
+  # meaning "not yet synced from HA". The encoder won't act until HA pushes
+  # the first value after boot. Not persisted to flash — always restored from HA.
+  - id: current_volume
+    type: float
+    restore_value: false
+    initial_value: '-1.0'
+
+  # True while the encoder is actively turning. Suppresses HA echo-back so the
+  # round-trip (encoder → HA → ha_volume callback) doesn't fight the encoder.
+  - id: encoder_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  - id: active_screen
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  - id: daily_listening_elapsed_seconds
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  - id: idle_seconds
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  - id: limit_reached
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  - id: current_browsed_id
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  - id: artist_album_name_0
+    type: std::string
+    initial_value: '""'
+  - id: artist_album_name_1
+    type: std::string
+    initial_value: '""'
+  - id: artist_album_name_2
+    type: std::string
+    initial_value: '""'
+  - id: artist_album_name_3
+    type: std::string
+    initial_value: '""'
+
+  - id: track_name_0
+    type: std::string
+    initial_value: '""'
+  - id: track_name_1
+    type: std::string
+    initial_value: '""'
+  - id: track_name_2
+    type: std::string
+    initial_value: '""'
+  - id: track_name_3
+    type: std::string
+    initial_value: '""'
+  - id: track_name_4
+    type: std::string
+    initial_value: '""'
+  - id: track_name_5
+    type: std::string
+    initial_value: '""'
+
+  - id: is_shuffled
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  - id: repeat_mode
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${device_friendly_name}
+  platformio_options:
+    build_flags:
+      - -DUSE_RGB565LE  # Little-endian RGB565 for LVGL images (required for Tab5 V2)
+  on_boot:
+    then:
+      # read the RTC time once when the system boots
+      - rx8130.read_time:
+      - select.set:
+          id: dac_output_select
+          option: "LINE1"
+      - light.turn_on:
+          id: backlight
+          brightness: 60%
+
+esp32:
+  variant: esp32p4
+  engineering_sample: true  # not part of the official m5stack yaml, but without it my esp32-p4 crashed during boot
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    advanced:
+      enable_idf_experimental_features: true
+
+esp32_hosted:
+  variant: esp32c6
+  active_high: true
+  clk_pin: GPIO12
+  cmd_pin: GPIO13
+  d0_pin: GPIO11
+  d1_pin: GPIO10
+  d2_pin: GPIO9
+  d3_pin: GPIO8
+  reset_pin: GPIO15
+  slot: 1
+
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+
+api:
+  encryption:
+    key: !secret mediaplayertablet_api_key
+  services:
+    - service: play_nfc_media
+      variables:
+        media_id: string
+      then:
+        - globals.set:
+            id: idle_seconds
+            value: '0'
+        - globals.set:
+            id: current_browsed_id
+            value: !lambda 'return media_id;'
+        - lvgl.widget.show: rfid_overlay
+        - if:
+            condition:
+              lambda: 'return media_id.find("artist") != std::string::npos;'
+            then:
+              - globals.set:
+                  id: active_screen
+                  value: '1' # Artist screen
+              - lvgl.widget.hide: page_start
+              - lvgl.widget.hide: page_album
+              - lvgl.widget.show: page_artist
+              - script.execute: fetch_artist_albums
+            else:
+              - globals.set:
+                  id: active_screen
+                  value: '2' # Album screen
+              - lvgl.widget.hide: page_start
+              - lvgl.widget.hide: page_artist
+              - lvgl.widget.show: page_album
+              - script.execute: fetch_album_tracks
+              - homeassistant.action:
+                  action: media_player.play_media
+                  data:
+                    entity_id: ${media_player_entity}
+                    enqueue: replace
+                    media_content_type: music
+                  data_template:
+                    media_content_id: !lambda 'return media_id;'
+        - delay: 3s
+        - lvgl.widget.hide: rfid_overlay
+
+number:
+  - platform: template
+    id: daily_listening_limit
+    name: "Daily Listening Limit"
+    min_value: 0
+    max_value: 1440
+    step: 5
+    unit_of_measurement: "min"
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          // Screen off logic
+          id(idle_seconds) += 1;
+          int timeout = 0;
+          bool playing = (id(current_track).state != "No Track Playing");
+          bool is_charging = id(charging).state;
+          
+          if (playing) {
+            timeout = is_charging ? 0 : 60; // Never off if charging and playing, 1 min if battery
+          } else {
+            timeout = is_charging ? 120 : 30; // 2 mins charging, 30s battery
+          }
+          
+          if (timeout > 0 && id(idle_seconds) >= timeout) {
+             id(backlight).turn_off();
+          }
+          
+          // Daily listening limit logic
+          float limit_mins = id(daily_listening_limit).state;
+          if (limit_mins > 0 && playing) {
+            id(daily_listening_elapsed_seconds) += 1;
+            if (id(daily_listening_elapsed_seconds) >= limit_mins * 60) {
+              id(limit_reached) = true;
+            }
+          }
+
+ota:
+  - platform: esphome
+    password: !secret mediaplayertablet_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Media Player Tablet"
+    password: !secret fallback_password
+
+http_request:
+  verify_ssl: false
+
+captive_portal:
+
+psram:
+  mode: hex
+  speed: 200MHz
+
+i2c:
+  - id: bsp_bus
+    sda: GPIO31
+    scl: GPIO32
+    frequency: 400kHz
+  - id: external_i2c
+    sda: GPIO53
+    scl: GPIO54
+
+esp_ldo:
+  # - voltage: 1.1V
+  #   channel: 4  # MIPI DSI Logic
+  # - voltage: 2.7V
+  #   channel: 3  # Analog Power
+  - voltage: 2.5V
+    channel: 3
+
+pi4ioe5v6408:
+  - id: pi4ioe1
+    address: 0x43
+    i2c_id: bsp_bus
+    # 0: O - wifi_antenna_int_ext
+    # 1: O - speaker_enable
+    # 2: O - external_5v_power
+    # 3: NC
+    # 4: O - lcd reset
+    # 5: O - touch panel reset
+    # 6: O - camera reset
+    # 7: I - headphone detect
+  - id: pi4ioe2
+    address: 0x44
+    i2c_id: bsp_bus
+    # 0: O - wifi_power
+    # 1: NC
+    # 2: NC
+    # 3: O - usb_5v_power
+    # 4: O - poweroff pulse
+    # 5: O - quick charge enable (inverted)
+    # 6: I - charging status
+    # 7: O - charge enable
+
+i2s_audio:
+  - id: mic_bus
+    i2s_lrclk_pin: GPIO29
+    i2s_bclk_pin: GPIO27
+    i2s_mclk_pin: GPIO30
+
+audio_adc:
+  - platform: es7210
+    id: es7210_adc
+    i2c_id: bsp_bus
+    bits_per_sample: 16bit
+    sample_rate: 16000
+
+audio_dac:
+  - platform: es8388
+    id: es8388_dac
+    i2c_id: bsp_bus
+
+microphone:
+  - platform: i2s_audio
+    id: tab5_microphone
+    i2s_din_pin: GPIO28
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    adc_type: external
+
+speaker:
+  - platform: i2s_audio
+    id: tab5_speaker
+    i2s_dout_pin: GPIO26
+    audio_dac: es8388_dac
+    dac_type: external
+    channel: mono
+    buffer_duration: 500ms
+    bits_per_sample: 16bit
+    sample_rate: 48000
+
+display:
+  - platform: mipi_dsi
+    id: lcd
+    dimensions:
+      height: 1280
+      width: 720
+    model: M5STACK-TAB5-V2
+    # pixel_mode: 24bit  # Required for correct color output on Tab5 V2
+    reset_pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 4
+    show_test_card: false
+
+
+touchscreen:
+  - platform: st7123
+    id: touch
+    display: lcd
+    i2c_id: bsp_bus
+    interrupt_pin: GPIO23
+    update_interval: never
+    reset_pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 5
+    calibration:
+      x_min: 0
+      x_max: 720
+      y_min: 0
+      y_max: 1280
+    on_touch:
+      then:
+        - globals.set:
+            id: idle_seconds
+            value: '0'
+        - if:
+            condition:
+              lambda: 'return id(backlight).current_values.get_brightness() < 0.1;'
+            then:
+              - light.turn_on:
+                  id: backlight
+                  brightness: 60%
+
+output:
+  - platform: ledc
+    pin: GPIO22
+    id: backlight_pwm
+    frequency: 1000Hz
+
+  # M5Stack Unit Scroll — single RGB LED
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 0
+    channel: red
+    id: led0_red
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 0
+    channel: green
+    id: led0_green
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    led_index: 0
+    channel: blue
+    id: led0_blue
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "Display Backlight"
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 250ms
+
+  # M5Stack Unit Scroll — single RGB LED
+  - platform: rgb
+    name: "Scroll LED"
+    id: scroll_led
+    red: led0_red
+    green: led0_green
+    blue: led0_blue
+    restore_mode: ALWAYS_OFF
+    default_transition_length: 0s
+
+time:
+  - platform: rx8130
+    id: rtc_time
+    i2c_id: bsp_bus
+    # repeated synchronization is not necessary unless the external RTC
+    # is much more accurate than the internal clock
+    update_interval: never
+    timezone: UTC
+
+switch:
+  - platform: gpio
+    id: wifi_power
+    name: "WiFi Power"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 0
+    restore_mode: ALWAYS_ON
+  - platform: gpio
+    id: usb_5v_power
+    name: "USB Power"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 3
+  - platform: gpio
+    id: quick_charge
+    name: "Quick Charge"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 5
+      inverted: true
+    restore_mode: ALWAYS_ON
+  - platform: gpio
+    id: charge_enable
+    name: "Charge Enable"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 7
+    restore_mode: ALWAYS_ON
+  - platform: gpio
+    id: wifi_antenna_int_ext
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 0
+  - platform: gpio
+    id: speaker_enable
+    name: "Speaker Enable"
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 1
+    restore_mode: ALWAYS_ON
+  - platform: gpio
+    id: external_5v_power
+    name: "External 5V Power"
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 2
+    restore_mode: ALWAYS_ON
+
+binary_sensor:
+  - platform: gpio
+    id: charging
+    name: "Charging Status"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 6
+      mode: INPUT_PULLDOWN
+    on_state:
+      then:
+        - lvgl.label.update:
+            id: battery_label
+            text: !lambda |-
+              char buf[32];
+              float pct = id(battery_percentage).state;
+              if (std::isnan(pct)) pct = 0.0;
+              sprintf(buf, "%.1f%%%s", pct, x ? " (Charging)" : "");
+              return std::string(buf);
+
+  - platform: gpio
+    id: headphone_detect
+    name: "Headphone Detect"
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 7
+    trigger_on_initial_state: true
+    on_state:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_on: headphone_detect
+            then:
+              - switch.turn_off: speaker_enable
+            else:
+              - switch.turn_on: speaker_enable
+
+  # M5Stack Unit Scroll
+  - platform: m5unit_scroll
+    m5unit_scroll_id: unit_scroll
+    name: "Unit Scroll Button"
+    on_press:
+      then:
+        - homeassistant.service:
+            service: media_player.media_play_pause
+            data:
+              entity_id: ${media_player_entity}
+
+  # M5Stack Unit Encoder
+  # - platform: m5unit_encoder
+  #   m5unit_encoder_id: unit_encoder
+  #   name: "Encoder Button"
+
+  - platform: homeassistant
+    id: media_shuffle_sensor
+    entity_id: ${media_player_entity}
+    attribute: shuffle
+    on_state:
+      then:
+        - lambda: 'ESP_LOGI("UI", "Shuffle state (binary): %s", x ? "true" : "false");'
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - globals.set:
+                  id: is_shuffled
+                  value: 'true'
+              - lvgl.widget.show: btn_shuffle_on
+              - lvgl.widget.hide: btn_shuffle_off
+            else:
+              - globals.set:
+                  id: is_shuffled
+                  value: 'false'
+              - lvgl.widget.show: btn_shuffle_off
+              - lvgl.widget.hide: btn_shuffle_on
+
+  - platform: status
+    name: "Status"
+
+button:
+  - platform: restart
+    name: "Restart"
+
+# The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
+select:
+  - platform: es8388
+    dac_output:
+      name: DAC Output
+      id: dac_output_select
+    adc_input_mic:
+      name: ADC Input Mic
+
+# A friendlier UI on top of the `wifi_antenna_int_ext` GPIO switch defined in
+# config.yaml. Lets the user pick "Internal" / "External" rather than toggling
+# a raw on/off switch.
+  - platform: template
+    id: wifi_antenna_select
+    name: "WiFi Antenna"
+    options:
+      - "Internal"
+      - "External"
+    optimistic: true
+    on_value:
+      - if:
+          condition:
+            lambda: return i == 0;
+          then:
+            - switch.turn_off: wifi_antenna_int_ext
+          else:
+            - switch.turn_on: wifi_antenna_int_ext
+
+sensor:
+  - platform: ina226
+    i2c_id: bsp_bus
+    address: 0x41
+    adc_averaging: 16
+    max_current: 8.192A
+    shunt_resistance: 0.005ohm
+    bus_voltage:
+      id: battery_voltage
+      name: "Battery Voltage"
+    current:
+      id: battery_current
+      name: "Battery Current"
+      # Positive means discharging
+      # Negative means charging
+
+# M5Stack Unit Scroll
+  - platform: m5unit_scroll
+    name: "Unit Scroll Encoder"
+    id: unit_scroll
+    i2c_id: external_i2c
+    address: 0x40
+    update_interval: 50ms
+    increment:
+      name: "Unit Scroll Increment"
+      # on_value only fires when non-zero (the C++ component filters idle polls)
+      on_value:
+        then:
+          - if:
+              condition:
+                # Guard: ignore until HA has synced the initial volume after boot
+                lambda: 'return id(current_volume) >= 0.0f;'
+              then:
+                # Mark encoder as active to suppress HA echo-back for 500 ms
+                - globals.set:
+                    id: encoder_active
+                    value: 'true'
+                - script.execute: suppress_ha_echo
+                - globals.set:
+                    id: current_volume
+                    value: !lambda |-
+                      float v = id(current_volume) + x * 0.02f;
+                      if (v < 0.0f) v = 0.0f;
+                      if (v > 1.0f) v = 1.0f;
+                      return v;
+                - homeassistant.service:
+                    service: media_player.volume_set
+                    data:
+                      entity_id: ${media_player_entity}
+                    data_template:
+                      volume_level: !lambda 'return id(current_volume);'
+                - lvgl.bar.update:
+                    id: volume_bar
+                    value: !lambda 'return (int)(id(current_volume) * 100);'
+                - lvgl.label.update:
+                    id: volume_label
+                    text: !lambda |-
+                      char buf[8];
+                      sprintf(buf, "%d%%", (int)(id(current_volume) * 100));
+                      return std::string(buf);
+                - script.execute: show_volume_overlay
+
+# Tab5 built-in battery discharges from full (8.23 V) to shutdown threshold (6.0 V)
+  - platform: template
+    name: "Battery Percentage"
+    id: battery_percentage
+    lambda: |-
+      float voltage = id(battery_voltage).state;
+      // Adjust these values based on your battery's actual min/max voltage
+      float min_voltage = 6.0;  // Discharged voltage
+      float max_voltage = 8.23;  // Fully charged voltage
+      float percentage = (voltage - min_voltage) / (max_voltage - min_voltage) * 100.0;
+      if (percentage > 100.0) return 100.0;
+      if (percentage < 0.0) return 0.0;
+      return percentage;
+    update_interval: 60s
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: battery_label
+            text: !lambda |-
+              char buf[32];
+              float pct = x;
+              if (std::isnan(pct)) pct = 0.0;
+              bool is_charging = id(charging).state;
+              sprintf(buf, "%.1f%%%s", pct, is_charging ? " (Charging)" : "");
+              return std::string(buf);
+
+# M5Stack unit encoder
+#   - platform: m5unit_encoder
+#     id: unit_encoder
+#     name: "Encoder Value"
+#     i2c_id: external_i2c
+
+# HA volume level — numeric 0.0–1.0, synced from the media player entity.
+# Used to keep current_volume in sync with external (HA-side) changes.
+  - platform: homeassistant
+    id: ha_volume
+    entity_id: ${media_player_entity}
+    attribute: volume_level
+    on_value:
+      then:
+        - if:
+            condition:
+              # First push after boot (sentinel -1.0): sync silently, no overlay.
+              # Subsequent external changes: sync AND show overlay.
+              lambda: 'return id(current_volume) < 0.0f;'
+            then:
+              - globals.set:
+                  id: current_volume
+                  value: !lambda 'return x;'
+            else:
+              - if:
+                  condition:
+                    # Encoder is actively turning — HA is echoing our command back.
+                    # Ignore completely: the encoder owns current_volume during this window.
+                    lambda: 'return id(encoder_active);'
+                  then:
+                    []  # do nothing — encoder manages current_volume exclusively
+                  else:
+                    # Genuine external change (e.g. from HA dashboard or another device).
+                    - globals.set:
+                        id: current_volume
+                        value: !lambda 'return x;'
+                    - lvgl.bar.update:
+                        id: volume_bar
+                        value: !lambda 'return (int)(x * 100);'
+                    - lvgl.label.update:
+                        id: volume_label
+                        text: !lambda |-
+                          char buf[8];
+                          sprintf(buf, "%d%%", (int)(x * 100));
+                          return std::string(buf);
+                    - script.execute: show_volume_overlay
+
+  # wifi sensors
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+    
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+    entity_category: "diagnostic"
+    device_class: ""
+    icon: "mdi:wifi"
+
+  - platform: homeassistant
+    id: media_duration
+    entity_id: ${media_player_entity}
+    attribute: media_duration
+    internal: true
+
+  - platform: homeassistant
+    id: media_position
+    entity_id: ${media_player_entity}
+    attribute: media_position
+    internal: true
+    on_value:
+      then:
+        - lvgl.bar.update:
+            id: track_progress
+            value: !lambda |-
+              float dur = id(media_duration).state;
+              if (std::isnan(dur) || dur <= 0) return 0;
+              return (int)((x / dur) * 100);
+
+# Media player
+media_player:
+  - platform: speaker
+    name: None
+    id: local_media_player
+    announcement_pipeline:
+      speaker: tab5_speaker
+      format: FLAC
+      sample_rate: 48000
+      num_channels: 1
+
+# M5Stack RFID reader
+rc522_i2c:
+  address: 0x28
+  i2c_id: external_i2c
+  on_tag:
+    then:
+      - homeassistant.tag_scanned: !lambda 'return x;'
+  on_tag_removed:
+    then:
+      - homeassistant.service:
+          service: media_player.media_pause
+          data:
+            entity_id: ${media_player_entity}
+
+# M5Stack unit scroll
+external_components:
+  - source:
+      type: git
+      url: https://github.com/ltextor/HA-tools
+      ref: main
+      path: ESPHome/MediaPlayerTablet/components
+    components: [m5unit_scroll]
+  - source: "github://pr#12075"
+    components: [st7123]
+
+font:
+  - file: "gfonts://Manrope"
+    id: manrope_16
+    size: 16
+    bpp: 4
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://Manrope"
+    id: manrope_24
+    size: 24
+    bpp: 4
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://Manrope"
+    id: manrope_48
+    size: 48
+    bpp: 4
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://JetBrains Mono"
+    id: jetbrains_14
+    size: 14
+    bpp: 4
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://Material Symbols Outlined"
+    id: material_icons_32
+    size: 32
+    bpp: 4
+    glyphs:
+      - "\ue1a3" # battery_full
+      - "\ue1a4" # battery_charging_full
+      - "\ue63e" # wifi
+      - "\ue51c" # moon (brightness_3)
+      - "\ue32d" # speaker
+      - "\ue043" # shuffle
+      - "\ue040" # repeat
+      - "\ue041" # repeat_one
+  - file: "gfonts://Material Symbols Outlined"
+    id: material_icons_48
+    size: 48
+    bpp: 4
+    glyphs:
+      - "\ue045" # skip_previous
+      - "\ue037" # play_arrow
+      - "\ue034" # pause
+      - "\ue044" # skip_next
+      - "\ue050" # volume_up
+script:
+  - id: show_volume_overlay
+    mode: restart
+    then:
+      - lvgl.widget.show: volume_overlay
+      - delay: 2s
+      - lvgl.widget.hide: volume_overlay
+
+  - id: suppress_ha_echo
+    mode: restart
+    then:
+      - delay: 500ms
+      - globals.set:
+          id: encoder_active
+          value: 'false'
+
+  - id: show_rfid_overlay
+    mode: restart
+    then:
+      - lvgl.widget.show: rfid_overlay
+      - delay: 3s
+      - lvgl.widget.hide: rfid_overlay
+
+  - id: fetch_artist_albums
+    mode: restart
+    then:
+      - http_request.post:
+          url: "${ha_url}/api/services/media_player/browse_media?return_response=true"
+          capture_response: true
+          request_headers:
+            Authorization: "Bearer ${ha_token}"
+            Content-Type: "application/json"
+          json:
+            entity_id: "${media_player_entity}"
+            media_content_type: "music"
+            media_content_id: !lambda 'return id(current_browsed_id);'
+          on_response:
+            then:
+              - lambda: |-
+                  json::parse_json(body, [](JsonObject root) {
+                    for (JsonPair kv : root) {
+                      JsonObject res = kv.value();
+                      if (res["children"].is<JsonArray>()) {
+                        JsonArray children = res["children"];
+                        int i = 0;
+                        for (JsonObject child : children) {
+                          std::string t = child["title"].as<std::string>();
+                          if (i == 0) id(artist_album_name_0) = t;
+                          else if (i == 1) id(artist_album_name_1) = t;
+                          else if (i == 2) id(artist_album_name_2) = t;
+                          else if (i == 3) id(artist_album_name_3) = t;
+                          i++;
+                        }
+                        for (; i < 4; i++) {
+                          if (i == 0) id(artist_album_name_0) = "";
+                          else if (i == 1) id(artist_album_name_1) = "";
+                          else if (i == 2) id(artist_album_name_2) = "";
+                          else if (i == 3) id(artist_album_name_3) = "";
+                        }
+                      }
+                    }
+                    return true;
+                  });
+              - lvgl.label.update:
+                  id: artist_album_label_0
+                  text: !lambda 'return id(artist_album_name_0);'
+              - lvgl.label.update:
+                  id: artist_album_label_1
+                  text: !lambda 'return id(artist_album_name_1);'
+              - lvgl.label.update:
+                  id: artist_album_label_2
+                  text: !lambda 'return id(artist_album_name_2);'
+              - lvgl.label.update:
+                  id: artist_album_label_3
+                  text: !lambda 'return id(artist_album_name_3);'
+                  
+  - id: fetch_album_tracks
+    mode: restart
+    then:
+      - http_request.post:
+          url: "${ha_url}/api/services/media_player/browse_media?return_response=true"
+          capture_response: true
+          request_headers:
+            Authorization: "Bearer ${ha_token}"
+            Content-Type: "application/json"
+          json:
+            entity_id: "${media_player_entity}"
+            media_content_type: "music"
+            media_content_id: !lambda 'return id(current_browsed_id);'
+          on_response:
+            then:
+              - lambda: |-
+                  json::parse_json(body, [](JsonObject root) {
+                    for (JsonPair kv : root) {
+                      JsonObject res = kv.value();
+                      if (res["children"].is<JsonArray>()) {
+                        JsonArray children = res["children"];
+                        int i = 0;
+                        for (JsonObject child : children) {
+                          std::string t = child["title"].as<std::string>();
+                          if (i == 0) id(track_name_0) = t;
+                          else if (i == 1) id(track_name_1) = t;
+                          else if (i == 2) id(track_name_2) = t;
+                          else if (i == 3) id(track_name_3) = t;
+                          else if (i == 4) id(track_name_4) = t;
+                          else if (i == 5) id(track_name_5) = t;
+                          i++;
+                        }
+                        for (; i < 6; i++) {
+                          if (i == 0) id(track_name_0) = "";
+                          else if (i == 1) id(track_name_1) = "";
+                          else if (i == 2) id(track_name_2) = "";
+                          else if (i == 3) id(track_name_3) = "";
+                          else if (i == 4) id(track_name_4) = "";
+                          else if (i == 5) id(track_name_5) = "";
+                        }
+                      }
+                    }
+                    return true;
+                  });
+              - lvgl.label.update:
+                  id: track_label_0
+                  text: !lambda 'return id(track_name_0);'
+              - lvgl.label.update:
+                  id: track_label_1
+                  text: !lambda 'return id(track_name_1);'
+              - lvgl.label.update:
+                  id: track_label_2
+                  text: !lambda 'return id(track_name_2);'
+              - lvgl.label.update:
+                  id: track_label_3
+                  text: !lambda 'return id(track_name_3);'
+              - lvgl.label.update:
+                  id: track_label_4
+                  text: !lambda 'return id(track_name_4);'
+              - lvgl.label.update:
+                  id: track_label_5
+                  text: !lambda 'return id(track_name_5);'
+              - lambda: |-
+                  ESP_LOGI("UI", "Fetched album tracks");
+
+text_sensor:
+  - platform: homeassistant
+    id: current_track
+    entity_id: ${media_player_entity}
+    attribute: media_title
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: bottom_track_label
+            text: !lambda |-
+              std::string artist = id(current_artist).state;
+              if (artist == "unknown" || artist == "unavailable") artist = "";
+              if (x.empty() || x == "unknown" || x == "unavailable") return std::string("No Track Playing");
+              if (artist.empty()) return x;
+              return artist + " - " + x;
+        # Update play/pause icon based on track availability > now in media_player_state
+        # - if:
+        #     condition:
+        #       lambda: 'return !x.empty() && x != "unknown" && x != "unavailable";'
+        #     then:
+        #       - lvgl.label.update:
+        #           id: btn_play_pause
+        #           text: "\ue034" # pause
+        #     else:
+        #       - lvgl.label.update:
+        #           id: btn_play_pause
+        #           text: "\ue037" # play_arrow
+        - if:
+            condition:
+              lambda: 'return id(limit_reached) && x != "unknown" && x != "No Track Playing";'
+            then:
+              # Stop media and show sleep screen
+              - homeassistant.service:
+                  service: media_player.media_pause
+                  data:
+                    entity_id: ${media_player_entity}
+              - lvgl.widget.show: page_sleep
+              - lvgl.label.update:
+                  id: top_timer_label
+                  text: "0:00"
+
+  - platform: homeassistant
+    id: current_artist
+    entity_id: ${media_player_entity}
+    attribute: media_artist
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: bottom_artist_label
+            text: !lambda |-
+              if (x.empty() || x == "unknown" || x == "unavailable") return std::string("");
+              return x;
+
+  - platform: homeassistant
+    id: current_picture
+    entity_id: ${media_player_entity}
+    attribute: entity_picture
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+            then:
+              - online_image.set_url:
+                  id: album_art_img
+                  url: !lambda 'return x;'
+              - component.update: album_art_img
+            else:
+              - lvgl.widget.hide: bottom_album_art
+
+  - platform: homeassistant
+    id: media_player_state
+    entity_id: ${media_player_entity}
+    on_value:
+      then:
+        - lambda: 'ESP_LOGI("UI", "Media player state: %s", x.c_str());'
+        - if:
+            condition:
+              lambda: 'return x == "playing";'
+            then:
+              - lvgl.label.update:
+                  id: btn_play_pause
+                  text: "\ue034" # pause
+            else:
+              - lvgl.label.update:
+                  id: btn_play_pause
+                  text: "\ue037" # play_arrow
+
+  - platform: homeassistant
+    id: media_repeat
+    entity_id: ${media_player_entity}
+    attribute: repeat
+    on_value:
+      then:
+        - lambda: 'ESP_LOGI("UI", "Repeat state: %s", x.c_str());'
+        - if:
+            condition:
+              lambda: 'return x == "one";'
+            then:
+              - globals.set:
+                  id: repeat_mode
+                  value: '2'
+              - lvgl.widget.show: btn_repeat_one
+              - lvgl.widget.hide: btn_repeat_all
+              - lvgl.widget.hide: btn_repeat_off
+        - if:
+            condition:
+              lambda: 'return x == "all";'
+            then:
+              - globals.set:
+                  id: repeat_mode
+                  value: '1'
+              - lvgl.widget.show: btn_repeat_all
+              - lvgl.widget.hide: btn_repeat_one
+              - lvgl.widget.hide: btn_repeat_off
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - globals.set:
+                  id: repeat_mode
+                  value: '0'
+              - lvgl.widget.show: btn_repeat_off
+              - lvgl.widget.hide: btn_repeat_one
+              - lvgl.widget.hide: btn_repeat_all
+
+online_image:
+  - id: album_art_img
+    type: RGB565
+    url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
+    format: jpg
+    update_interval: never
+    resize: 200x200
+    on_download_finished:
+      then:
+        - lvgl.image.update:
+            id: bottom_album_art
+            src: album_art_img
+        - lvgl.widget.show: bottom_album_art
+
+lvgl:
+  byte_order: little_endian
+  rotation: 90
+  bottom_layer:
+    bg_color: 0x121212
+  style_definitions:
+    - id: title_style
+      text_font: manrope_48
+      text_color: 0xFFFFFF
+    - id: label_style
+      text_font: jetbrains_14
+      text_color: 0xA0A0A0
+    - id: text_style
+      text_font: manrope_24
+      text_color: 0xDDDDDD
+    - id: magenta_style
+      text_font: manrope_24
+      text_color: 0xFF00FF
+    - id: icon_32_style
+      text_font: material_icons_32
+      text_color: 0xDDDDDD
+    - id: icon_48_style
+      text_font: material_icons_48
+      text_color: 0xFFFFFF
+    - id: transparent_style
+      bg_opa: 0%
+      border_width: 0
+      pad_all: 0
+    - id: icon_32_active_style
+      text_font: material_icons_32
+      text_color: 0xFF00FF
+  top_layer:
+    widgets:
+      - label:
+          id: top_timer_label
+          text: ""
+          x: 20
+          y: 12
+          styles: [label_style]
+      - label:
+          id: top_wifi_icon
+          text: "\ue63e" # wifi
+          styles: [icon_32_style]
+          align: TOP_RIGHT
+          x: -100
+          y: 9
+      - label:
+          id: top_battery_icon
+          text: "\ue1a3" # battery_full
+          styles: [icon_32_style]
+          align: TOP_RIGHT
+          x: -60
+          y: 9
+      - label:
+          id: battery_label
+          text: "100%"
+          styles: [label_style]
+          align: TOP_RIGHT
+          x: -10
+          y: 18
+  pages:
+    - id: root_page
+      bg_color: 0x121212
+      pad_all: 0
+      widgets:
+
+        # ----- BOTTOM BAR (MEDIA PLAYER) -----
+        - obj:
+            id: bottom_bar
+            width: 100%
+            height: 100
+            align: BOTTOM_MID
+            bg_color: 0x1A1A1A
+            border_width: 0
+            widgets:
+              - bar:
+                  id: track_progress
+                  width: 100%
+                  height: 4
+                  align: TOP_MID
+                  y: 0
+                  value: 0
+                  bg_color: 0x333333
+                  bg_opa: COVER
+                  indicator:
+                    bg_color: 0xFF00FF
+                    bg_opa: COVER
+              - image:
+                  id: bottom_album_art
+                  src: album_art_img
+                  width: 80
+                  height: 80
+                  align: LEFT_MID
+                  x: 10
+                  radius: 8
+                  hidden: true
+              - obj:
+                  width: 200
+                  height: 100%
+                  align: LEFT_MID
+                  x: 100
+                  styles: [transparent_style]
+                  layout:
+                    type: flex
+                    flex_flow: column
+                    flex_align_main: center
+                  widgets:
+                    - label:
+                        id: bottom_track_label
+                        text: "No Track Playing"
+                        styles: [text_style]
+                        long_mode: SCROLL_CIRCULAR
+                        width: 100%
+                    - label:
+                        id: bottom_artist_label
+                        text: ""
+                        styles: [label_style]
+                        long_mode: SCROLL_CIRCULAR
+                        width: 100%
+              - obj:
+                  width: 500
+                  height: 100%
+                  align: CENTER
+                  styles: [transparent_style]
+                  layout:
+                    type: flex
+                    flex_flow: row
+                    flex_align_main: space_evenly
+                    flex_align_cross: center
+                  widgets:
+                    - obj:
+                        width: 48
+                        height: 48
+                        styles: [transparent_style]
+                        widgets:
+                          - label:
+                              id: btn_shuffle_off
+                              text: "\ue043" # shuffle
+                              styles: [icon_32_style]
+                              align: CENTER
+                              on_click:
+                                - globals.set:
+                                    id: is_shuffled
+                                    value: 'true'
+                                - lvgl.widget.show: btn_shuffle_on
+                                - lvgl.widget.hide: btn_shuffle_off
+                                - homeassistant.service:
+                                    service: media_player.shuffle_set
+                                    data:
+                                      entity_id: ${media_player_entity}
+                                      shuffle: 'true'
+                          - label:
+                              id: btn_shuffle_on
+                              text: "\ue043" # shuffle
+                              styles: [icon_32_active_style]
+                              hidden: true
+                              align: CENTER
+                              on_click:
+                                - globals.set:
+                                    id: is_shuffled
+                                    value: 'false'
+                                - lvgl.widget.show: btn_shuffle_off
+                                - lvgl.widget.hide: btn_shuffle_on
+                                - homeassistant.service:
+                                    service: media_player.shuffle_set
+                                    data:
+                                      entity_id: ${media_player_entity}
+                                      shuffle: 'false'
+                    - label:
+                        id: btn_prev
+                        text: "\ue045" # skip_previous
+                        styles: [icon_48_style]
+                        on_click:
+                          - homeassistant.service:
+                              service: media_player.media_previous_track
+                              data:
+                                entity_id: ${media_player_entity}
+                    - label:
+                        id: btn_play_pause
+                        text: "\ue037" # play_arrow
+                        styles: [icon_48_style]
+                        on_click:
+                          - homeassistant.service:
+                              service: media_player.media_play_pause
+                              data:
+                                entity_id: ${media_player_entity}
+                    - label:
+                        id: btn_next
+                        text: "\ue044" # skip_next
+                        styles: [icon_48_style]
+                        on_click:
+                          - homeassistant.service:
+                              service: media_player.media_next_track
+                              data:
+                                entity_id: ${media_player_entity}
+                    - obj:
+                        width: 48
+                        height: 48
+                        styles: [transparent_style]
+                        widgets:
+                          - label:
+                              id: btn_repeat_off
+                              text: "\ue040" # repeat
+                              styles: [icon_32_style]
+                              align: CENTER
+                              on_click:
+                                - globals.set:
+                                    id: repeat_mode
+                                    value: '1'
+                                - lvgl.widget.show: btn_repeat_all
+                                - lvgl.widget.hide: btn_repeat_off
+                                - lvgl.widget.hide: btn_repeat_one
+                                - homeassistant.service:
+                                    service: media_player.repeat_set
+                                    data:
+                                      entity_id: ${media_player_entity}
+                                      repeat: "all"
+                          - label:
+                              id: btn_repeat_all
+                              text: "\ue040" # repeat
+                              styles: [icon_32_active_style]
+                              hidden: true
+                              align: CENTER
+                              on_click:
+                                - globals.set:
+                                    id: repeat_mode
+                                    value: '2'
+                                - lvgl.widget.show: btn_repeat_one
+                                - lvgl.widget.hide: btn_repeat_all
+                                - lvgl.widget.hide: btn_repeat_off
+                                - homeassistant.service:
+                                    service: media_player.repeat_set
+                                    data:
+                                      entity_id: ${media_player_entity}
+                                      repeat: "one"
+                          - label:
+                              id: btn_repeat_one
+                              text: "\ue041" # repeat_one
+                              styles: [icon_32_active_style]
+                              hidden: true
+                              align: CENTER
+                              on_click:
+                                - globals.set:
+                                    id: repeat_mode
+                                    value: '0'
+                                - lvgl.widget.show: btn_repeat_off
+                                - lvgl.widget.hide: btn_repeat_all
+                                - lvgl.widget.hide: btn_repeat_one
+                                - homeassistant.service:
+                                    service: media_player.repeat_set
+                                    data:
+                                      entity_id: ${media_player_entity}
+                                      repeat: "off"
+              - label:
+                  id: btn_speaker
+                  text: "\ue32d" # speaker
+                  align: RIGHT_MID
+                  x: -30
+                  styles: [icon_32_style]
+
+        # ----- CONTENT AREA -----
+        - obj:
+            id: content_area
+            width: 100%
+            height: 570
+            y: 50
+            styles: [transparent_style]
+            widgets:
+              - obj:
+                  id: page_start
+                  width: 100%
+                  height: 100%
+                  styles: [transparent_style]
+                  hidden: false
+                  layout:
+                    type: flex
+                    flex_flow: column
+                    flex_align_main: center
+                    flex_align_cross: center
+                  widgets:
+                    - label:
+                        text: "Scan a RFID card"
+                        styles: [title_style]
+
+              - obj:
+                  id: page_artist
+                  width: 100%
+                  height: 100%
+                  styles: [transparent_style]
+                  hidden: true
+                  layout:
+                    type: flex
+                    flex_flow: row_wrap
+                    flex_align_main: space_around
+                  widgets:
+                    - obj: {width: 220, height: 260, styles: [transparent_style], layout: {type: flex, flex_flow: column, flex_align_cross: center}, widgets: [{image: {src: album_art_img, width: 200, height: 200, radius: 12}}, {label: {id: artist_album_label_0, text: "", styles: [label_style], long_mode: SCROLL_CIRCULAR, width: 200}}]}
+                    - obj: {width: 220, height: 260, styles: [transparent_style], layout: {type: flex, flex_flow: column, flex_align_cross: center}, widgets: [{image: {src: album_art_img, width: 200, height: 200, radius: 12}}, {label: {id: artist_album_label_1, text: "", styles: [label_style], long_mode: SCROLL_CIRCULAR, width: 200}}]}
+                    - obj: {width: 220, height: 260, styles: [transparent_style], layout: {type: flex, flex_flow: column, flex_align_cross: center}, widgets: [{image: {src: album_art_img, width: 200, height: 200, radius: 12}}, {label: {id: artist_album_label_2, text: "", styles: [label_style], long_mode: SCROLL_CIRCULAR, width: 200}}]}
+                    - obj: {width: 220, height: 260, styles: [transparent_style], layout: {type: flex, flex_flow: column, flex_align_cross: center}, widgets: [{image: {src: album_art_img, width: 200, height: 200, radius: 12}}, {label: {id: artist_album_label_3, text: "", styles: [label_style], long_mode: SCROLL_CIRCULAR, width: 200}}]}
+
+              - obj:
+                  id: page_album
+                  width: 100%
+                  height: 100%
+                  styles: [transparent_style]
+                  hidden: true
+                  layout:
+                    type: flex
+                    flex_flow: row
+                  widgets:
+                    - obj:
+                        width: 40%
+                        height: 100%
+                        styles: [transparent_style]
+                        layout:
+                          type: flex
+                          flex_flow: column
+                          flex_align_main: center
+                          flex_align_cross: center
+                        widgets:
+                          - image:
+                              id: page_album_art
+                              src: album_art_img
+                              width: 250
+                              height: 250
+                              radius: 12
+                          - label:
+                              id: page_album_title
+                              text: "Album"
+                              styles: [title_style]
+                          - label:
+                              id: page_album_artist
+                              text: "Artist"
+                              styles: [label_style]
+                    - obj:
+                        id: page_album_tracks
+                        width: 60%
+                        height: 100%
+                        styles: [transparent_style]
+                        layout:
+                          type: flex
+                          flex_flow: column
+                        widgets:
+                          - label: {id: track_label_0, text: "", styles: [text_style], width: 100%}
+                          - label: {id: track_label_1, text: "", styles: [text_style], width: 100%}
+                          - label: {id: track_label_2, text: "", styles: [text_style], width: 100%}
+                          - label: {id: track_label_3, text: "", styles: [text_style], width: 100%}
+                          - label: {id: track_label_4, text: "", styles: [text_style], width: 100%}
+                          - label: {id: track_label_5, text: "", styles: [text_style], width: 100%}
+
+        # ----- SLEEP SCREEN SAVER -----
+        - obj:
+            id: page_sleep
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            hidden: true
+            widgets:
+              - label:
+                  text: "\ue51c" # moon
+                  styles: [icon_48_style]
+                  align: CENTER
+
+        # ----- VOLUME OVERLAY -----
+        - obj:
+            id: volume_overlay
+            hidden: true
+            width: 680
+            height: 120
+            align: CENTER
+            bg_color: 0x1E1E1E
+            bg_opa: 95%
+            radius: 20
+            pad_left: 24
+            pad_right: 24
+            layout:
+              type: flex
+              flex_flow: row
+              flex_align_cross: center
+              flex_align_main: space_between
+            widgets:
+              - label:
+                  text: "\ue050" # volume_up
+                  styles: [icon_48_style]
+              - bar:
+                  id: volume_bar
+                  width: 440
+                  height: 30
+                  value: 0
+                  bg_color: 0x333333
+                  bg_opa: COVER
+                  indicator:
+                    bg_color: 0xFF00FF
+                    bg_opa: COVER
+              - label:
+                  id: volume_label
+                  text: "50%"
+                  styles: [title_style]
+                  width: 120
+                  text_align: RIGHT
+
+        # ----- RFID OVERLAY -----
+        - obj:
+            id: rfid_overlay
+            hidden: true
+            width: 400
+            height: 200
+            align: CENTER
+            bg_color: 0x1E1E1E
+            bg_opa: 95%
+            radius: 12
+            layout:
+              type: flex
+              flex_flow: column
+              flex_align_main: center
+              flex_align_cross: center
+            widgets:
+              - label:
+                  text: "Loading Media..."
+                  styles: [text_style]

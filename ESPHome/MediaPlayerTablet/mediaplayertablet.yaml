@@ -64,19 +64,48 @@ logger:
 api:
   encryption:
     key: !secret mediaplayertablet_api_key
+  # show wifi status when connected, otherwise wifi unavailable icon
+  on_client_connected:
+    - wait_until:
+        condition:
+          api.connected:
+            state_subscription_only: true
+    - lvgl.widget.hide: label_notconnected
+    - lvgl.widget.show: label_wifi
+  on_client_disconnected:
+    - if:
+        condition:
+          lambda: 'return (0 == client_info.find("Home Assistant "));'
+        then:
+          - lvgl.widget.show: label_notconnected
+          - lvgl.widget.hide: label_wifi
+  # nfc tag is scanned and media id is passed to device > show album or player page
+  # optional todo: show rfid scanning overlay for 3s
   services:
     - service: play_nfc_media
       variables:
         media_id: string
       then:
-        - homeassistant.action:
-            action: media_player.play_media
-            data:
-              entity_id: ${media_player_entity}
-              enqueue: replace
-              media_content_type: music
-            data_template:
-              media_content_id: !lambda 'return media_id;'
+        - if:
+            condition:
+              lambda: 'return media_id.find("artist") != std::string::npos;'
+            then:
+              - lvgl.widget.hide: page_nfc
+              - lvgl.widget.hide: page_player
+              - lvgl.widget.show: page_artist
+              - script.execute: fetch_artist_albums
+            else:
+              - lvgl.widget.hide: page_nfc
+              - lvgl.widget.hide: page_artist
+              - lvgl.widget.show: page_player
+              - homeassistant.action:
+                  action: media_player.play_media
+                  data:
+                    entity_id: ${media_player_entity}
+                    enqueue: replace
+                    media_content_type: music
+                  data_template:
+                    media_content_id: !lambda 'return media_id;'
 
 
 ota:
