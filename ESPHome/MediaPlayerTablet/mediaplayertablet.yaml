@@ -2,12 +2,18 @@
 # display off when inactive
 # wakeup on touchscreen, encoder turn and press, nfc activity (also reset inactivity counter for encoder and nfc)
 
-# to do
-# screensaver during night
-# keep display on when playing and power connected
+# implemented > testing
+# changed volume bar logic
 # wifi and battery icons
-# basic pages
+# screensaver during night
 
+# to do
+# keep display on when playing and power connected
+# basic pages
+# Sleep: counter, when 0 finish song and pause, set sleeping true and show sleep overlay, block encoder button and rfid
+# Sleep value: exposed to HA, when changed push sleep reset button
+# Sleep reset: exposed to HA, when pushed remove sleep overlay, reset sleep counter, set sleeping false (enables encoder button and rfid)
+# Sleep midnight: push sleep reset button
 
 
 substitutions:
@@ -84,6 +90,7 @@ api:
             state_subscription_only: true
     - lvgl.widget.hide: label_notconnected
     - lvgl.widget.show: label_wifi
+    # optional to do > boot screen which hides after connecting
   on_client_disconnected:
     - if:
         condition:
@@ -102,14 +109,16 @@ api:
             condition:
               lambda: 'return media_id.find("artist") != std::string::npos;'
             then:
+              # artist rfid card
               - lvgl.page.show:
                   id: page_artist
-                  animation: MOVE_TOP
+                  animation: FADE_IN
               # - script.execute: fetch_artist_albums
             else:
+              # album or playlist rfid card
               - lvgl.page.show:
                   id: page_player
-                  animation: MOVE_TOP
+                  animation: FADE_IN
               - homeassistant.action:
                   action: media_player.play_media
                   data:
@@ -118,7 +127,6 @@ api:
                     media_content_type: music
                   data_template:
                     media_content_id: !lambda 'return media_id;'
-
 
 ota:
   - platform: esphome
@@ -187,12 +195,12 @@ i2s_audio:
     i2s_bclk_pin: GPIO27
     i2s_mclk_pin: GPIO30
 
-audio_adc:
-  - platform: es7210
-    id: es7210_adc
-    i2c_id: bsp_bus
-    bits_per_sample: 16bit
-    sample_rate: 16000
+# audio_adc:
+#   - platform: es7210
+#     id: es7210_adc
+#     i2c_id: bsp_bus
+#     bits_per_sample: 16bit
+#     sample_rate: 16000
 
 audio_dac:
   - platform: es8388
@@ -304,6 +312,19 @@ time:
     # is much more accurate than the internal clock
     update_interval: never
     timezone: UTC
+    on_time:
+      - hours: 1
+        minutes: 5
+        seconds: 0
+        then:
+          - logger.log: "Starting Antiburn" # will turn off on next touchscreen event
+          - if:
+              condition: lvgl.is_paused
+              then:
+                - lvgl.resume:
+                - lvgl.widget.redraw:
+          - lvgl.pause:
+              show_snow: true
 
 switch:
   - platform: gpio
@@ -378,15 +399,12 @@ binary_sensor:
       pi4ioe5v6408: pi4ioe1
       number: 7
     trigger_on_initial_state: true
-    on_state:
+    on_press:
       then:
-        - if:
-            condition:
-              binary_sensor.is_on: headphone_detect
-            then:
-              - switch.turn_off: speaker_enable
-            else:
-              - switch.turn_on: speaker_enable
+        - switch.turn_off: speaker_enable
+    on_release:
+      then:
+        - switch.turn_on: speaker_enable
 
   # M5Stack Unit Scroll
   - platform: m5unit_scroll
@@ -509,41 +527,13 @@ sensor:
                 - lvgl.bar.update:
                     id: volume_bar
                     value: !lambda 'return (int)(id(current_volume) * 100);'
-                - lvgl.label.update:
-                    id: volume_label
-                    text: !lambda |-
-                      char buf[8];
-                      sprintf(buf, "%d%%", (int)(id(current_volume) * 100));
-                      return std::string(buf);
+                # - lvgl.label.update:
+                #     id: volume_label
+                #     text: !lambda |-
+                #       char buf[8];
+                #       sprintf(buf, "%d%%", (int)(id(current_volume) * 100));
+                #       return std::string(buf);
                 - script.execute: show_volume_overlay
-
-# Tab5 built-in battery discharges from full (8.23 V) to shutdown threshold (6.0 V)
-  - platform: template
-    name: "Battery Percentage"
-    id: battery_percentage
-    lambda: |-
-      float voltage = id(battery_voltage).state;
-      // Adjust these values based on your battery's actual min/max voltage
-      float min_voltage = 6.0;  // Discharged voltage
-      float max_voltage = 8.23;  // Fully charged voltage
-      float percentage = (voltage - min_voltage) / (max_voltage - min_voltage) * 100.0;
-      if (percentage > 100.0) return 100.0;
-      if (percentage < 0.0) return 0.0;
-      return percentage;
-    update_interval: 60s
-    unit_of_measurement: "%"
-    accuracy_decimals: 1
-    # on_value:
-    #   then:
-    #     - lvgl.label.update:
-    #         id: battery_label
-    #         text: !lambda |-
-    #           char buf[32];
-    #           float pct = x;
-    #           if (std::isnan(pct)) pct = 0.0;
-    #           bool is_charging = id(charging).state;
-    #           sprintf(buf, "%.1f%%%s", pct, is_charging ? " (Charging)" : "");
-    #           return std::string(buf);
 
 # HA volume level — numeric 0.0–1.0, synced from the media player entity.
 # Used to keep current_volume in sync with external (HA-side) changes.
@@ -567,10 +557,8 @@ sensor:
                   condition:
                     # Encoder is actively turning — HA is echoing our command back.
                     # Ignore completely: the encoder owns current_volume during this window.
-                    lambda: 'return id(encoder_active);'
+                    lambda: 'return !id(encoder_active);'
                   then:
-                    []  # do nothing — encoder manages current_volume exclusively
-                  else:
                     # Genuine external change (e.g. from HA dashboard or another device).
                     - globals.set:
                         id: current_volume
@@ -585,6 +573,36 @@ sensor:
                           sprintf(buf, "%d%%", (int)(x * 100));
                           return std::string(buf);
                     - script.execute: show_volume_overlay
+
+# Tab5 built-in battery discharges from full (8.23 V) to shutdown threshold (6.0 V)
+  - platform: template
+    name: "Battery Percentage"
+    id: battery_percentage
+    lambda: |-
+      float voltage = id(battery_voltage).state;
+      // Adjust these values based on your battery's actual min/max voltage
+      float min_voltage = 6.0;  // Discharged voltage
+      float max_voltage = 8.23;  // Fully charged voltage
+      float percentage = (voltage - min_voltage) / (max_voltage - min_voltage) * 100.0;
+      if (percentage > 100.0) return 100.0;
+      if (percentage < 0.0) return 0.0;
+      return percentage;
+    update_interval: 60s
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_battery_status
+            text: !lambda |-
+              if      (x > 95) return "\uf304"; // battery full
+              else if (x > 80) return "\uf307";
+              else if (x > 65) return "\uf308";
+              else if (x > 50) return "\uf309";
+              else if (x > 35) return "\uf30a";
+              else if (x > 20) return "\uf30b";
+              else if (x > 5)  return "\uf30c";
+              else             return "\uf30d"; // battery empty
 
   # wifi sensors
   - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
@@ -602,6 +620,14 @@ sensor:
     entity_category: "diagnostic"
     device_class: ""
     icon: "mdi:wifi"
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_wifi_status
+            text: !lambda |-
+              if      (x > 66) return "\ue63e"; // wifi 3 bar
+              else if (x > 33) return "\ue4d9"; // wifi 2 bar
+              else             return "\ue4ca"; // wifi 1 bar
 
 # Media player
 media_player:
@@ -645,7 +671,7 @@ rc522_i2c:
       - lambda: 'lv_disp_trig_activity(NULL);'  # resets LVGL idle timer
       - lvgl.page.show:
           id: page_nfc
-          animation: MOVE_TOP
+          animation: FADE_IN
 
 # M5Stack unit scroll
 external_components:
@@ -693,11 +719,16 @@ font:
     size: 24
     bpp: 4
     glyphsets: [GF_Latin_Core]
-  - file: "gfonts://Manrope"
-    id: manrope_16
-    size: 16
+  - file: "gfonts://JetBrains Mono"
+    id: jetbrains_48
+    size: 48
     bpp: 4
     glyphsets: [GF_Latin_Core]
+  # - file: "gfonts://Manrope"
+  #   id: manrope_16
+  #   size: 16
+  #   bpp: 4
+  #   glyphsets: [GF_Latin_Core]
   - file: "gfonts://Manrope"
     id: manrope_24
     size: 24
@@ -795,6 +826,7 @@ text_sensor:
                 }
           on_error:
             - logger.log: "get_queue action failed"
+
   # sensors for current and next track info, updated by the above trigger
   - platform: template
     id: current_artist
@@ -814,6 +846,16 @@ text_sensor:
   - platform: template
     id: next_artwork
     name: "Next Artwork"
+
+  # sensors for album name and artist
+  - platform: homeassistant
+    id: current_album_name
+    entity_id: ${media_player_entity}
+    attribute: media_album_name
+  - platform: homeassistant
+    id: current_album_artist
+    entity_id: ${media_player_entity}
+    attribute: media_album_artist
 
 online_image:
   - id: album_art_img
@@ -844,12 +886,21 @@ lvgl:
     # page:
       # bg_opa: TRANSP
   style_definitions:
-    - id: label_style
+    - id: mono_small_style
       text_font: jetbrains_24
-      text_color: 0xA0A0A0
+      text_color: white
+    - id: mono_large_style
+      text_font: jetbrains_48
+      text_color: white
+    - id: sans_small_style
+      text_font: manrope_24
+      text_color: white
+    - id: sans_large_style
+      text_font: manrope_48
+      text_color: white
     - id: icon_48_style
       text_font: material_icons_48
-      text_color: 0xDDDDDD
+      text_color: white
   bottom_layer:
     # bg_color: black
   top_layer:
@@ -859,11 +910,11 @@ lvgl:
       - label:
           id: top_timer_label
           text: "0:00"
-          styles: [label_style]
+          styles: [mono_large_style]
           align: TOP_LEFT
           x: 5
       - label:
-          id: label_wifi
+          id: label_wifi_status
           text: "\ue63e" # wifi 3 bar (initial state)
           styles: [icon_48_style]
           align: TOP_RIGHT
@@ -891,6 +942,7 @@ lvgl:
             id: label_wifi
             align: OUT_LEFT_MID
             x: -30
+          hidden: true
       # ----- VOLUME OVERLAY -----
       - obj:
           id: volume_overlay
@@ -922,31 +974,31 @@ lvgl:
                 indicator:
                   bg_color: 0xFF00FF
                   bg_opa: COVER
-            - label:
-                id: volume_label
-                text: "50%"
-                styles: [label_style]
-                width: 120
-                text_align: RIGHT
+            # - label:
+            #     id: volume_label
+            #     text: "50%"
+            #     styles: [label_style]
+            #     width: 120
+            #     text_align: RIGHT
   pages:
     - id: page_nfc
       widgets:
         - label:
             text: "Scan NFC Tag to Play"
             align: CENTER
-            styles: [label_style]
+            styles: [mono_large_style]
     - id: page_artist
       widgets:
         - label:
             text: "No Artist Playing"
             align: CENTER
-            styles: [label_style]
+            styles: [mono_large_style]
     - id: page_player
       widgets:
         - label:
             text: "No Track Playing"
             align: CENTER
-            styles: [label_style]
+            styles: [mono_large_style]
 
 
   # bottom_layer:
