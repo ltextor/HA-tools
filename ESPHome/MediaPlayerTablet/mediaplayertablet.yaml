@@ -1079,7 +1079,7 @@ lvgl:
             id: label_current_artist
             text: "Current Artist"
             align_to:
-              id: label_album_name
+              id: label_current_album_name
               align: OUT_BOTTOM_MID
               y: 10
             styles: [mono_large_style]
