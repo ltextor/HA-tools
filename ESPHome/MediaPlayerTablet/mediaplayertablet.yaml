@@ -787,10 +787,20 @@ text_sensor:
     id: current_album_name
     entity_id: ${media_player_entity}
     attribute: media_album_name
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_current_album_name
+            text: !lambda 'return x;'
   - platform: homeassistant
     id: current_album_artist
     entity_id: ${media_player_entity}
     attribute: media_album_artist
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_current_album_artist
+            text: !lambda 'return x;'
 
   # Hidden trigger: watches the media_player track id and refreshes queue sensors on change
   - platform: homeassistant
@@ -862,18 +872,38 @@ text_sensor:
   - platform: template
     id: current_artist
     name: "Current Artist"
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_current_artist
+            text: !lambda 'return x;'
   - platform: template
     id: current_track
     name: "Current Track"
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_current_track
+            text: !lambda 'return x;'
   - platform: template
     id: current_artwork
     name: "Current Artwork"
   - platform: template
     id: next_artist
     name: "Next Artist"
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_next_artist
+            text: !lambda 'return x;'
   - platform: template
     id: next_track
     name: "Next Track"
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_next_track
+            text: !lambda 'return x;'
   - platform: template
     id: next_artwork
     name: "Next Artwork"
@@ -1032,8 +1062,50 @@ lvgl:
     - id: page_player
       widgets:
         - label:
-            text: "No Track Playing"
+            id: label_current_album_artist
+            text: "Current Album Artist"
             align: CENTER
+            y: 200
+            styles: [mono_large_style]
+        - label:
+            id: label_current_album_name
+            text: "Current Album Name"
+            align_to:
+              id: label_current_album_artist
+              align: OUT_BOTTOM_MID
+              y: 10
+            styles: [mono_large_style]
+        - label:
+            id: label_current_artist
+            text: "Current Artist"
+            align_to:
+              id: label_album_name
+              align: OUT_BOTTOM_MID
+              y: 10
+            styles: [mono_large_style]
+        - label:
+            id: label_current_track
+            text: "Current Track"
+            align_to:
+              id: label_current_artist
+              align: OUT_BOTTOM_MID
+              y: 10
+            styles: [mono_large_style]
+        - label:
+            id: label_next_artist
+            text: "Next Artist"
+            align_to:
+              id: label_current_track
+              align: OUT_BOTTOM_MID
+              y: 10
+            styles: [mono_large_style]
+        - label:
+            id: label_next_track
+            text: "Next Track"
+            align_to:
+              id: label_next_artist
+              align: OUT_BOTTOM_MID
+              y: 10
             styles: [mono_large_style]
   on_idle:
     timeout: 30s
