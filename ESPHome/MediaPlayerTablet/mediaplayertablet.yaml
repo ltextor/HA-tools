@@ -1065,7 +1065,7 @@ lvgl:
             id: label_current_album_artist
             text: "Current Album Artist"
             align: CENTER
-            y: 200
+            y: -200
             styles: [mono_large_style]
         - label:
             id: label_current_album_name
