@@ -6,9 +6,9 @@
 # changed volume bar logic
 # wifi and battery icons
 # screensaver during night
+# keep display on when playing and power connected
 
 # to do
-# keep display on when playing and power connected
 # basic pages
 # Sleep: counter, when 0 finish song and pause, set sleeping true and show sleep overlay, block encoder button and rfid
 # Sleep value: exposed to HA, when changed push sleep reset button
@@ -89,7 +89,7 @@ api:
           api.connected:
             state_subscription_only: true
     - lvgl.widget.hide: label_notconnected
-    - lvgl.widget.show: label_wifi
+    - lvgl.widget.show: label_wifi_status
     # optional to do > boot screen which hides after connecting
   on_client_disconnected:
     - if:
@@ -97,7 +97,7 @@ api:
           lambda: 'return (0 == client_info.find("Home Assistant "));'
         then:
           - lvgl.widget.show: label_notconnected
-          - lvgl.widget.hide: label_wifi
+          - lvgl.widget.hide: label_wifi_status
   # nfc tag is scanned and media id is passed to device > show album or player page
   # optional todo: show rfid scanning overlay for 3s
   services:
@@ -525,7 +525,7 @@ sensor:
                     data_template:
                       volume_level: !lambda 'return id(current_volume);'
                 - lvgl.bar.update:
-                    id: volume_bar
+                    id: bar_volume
                     value: !lambda 'return (int)(id(current_volume) * 100);'
                 # - lvgl.label.update:
                 #     id: volume_label
@@ -564,14 +564,14 @@ sensor:
                         id: current_volume
                         value: !lambda 'return x;'
                     - lvgl.bar.update:
-                        id: volume_bar
+                        id: bar_volume
                         value: !lambda 'return (int)(x * 100);'
-                    - lvgl.label.update:
-                        id: volume_label
-                        text: !lambda |-
-                          char buf[8];
-                          sprintf(buf, "%d%%", (int)(x * 100));
-                          return std::string(buf);
+                    # - lvgl.label.update:
+                    #     id: volume_label
+                    #     text: !lambda |-
+                    #       char buf[8];
+                    #       sprintf(buf, "%d%%", (int)(x * 100));
+                    #       return std::string(buf);
                     - script.execute: show_volume_overlay
 
 # Tab5 built-in battery discharges from full (8.23 V) to shutdown threshold (6.0 V)
@@ -686,6 +686,15 @@ external_components:
 
 font:
   - file: "gfonts://Material Symbols Outlined"
+    id: material_icons_36
+    size: 36
+    bpp: 4
+    glyphs:
+      - "\ue4ca" # wifi 1 bar
+      - "\ue4d9" # wifi 2 bar
+      - "\ue63e" # wifi 3 bar
+      - "\ue648" # no wifi
+  - file: "gfonts://Material Symbols Outlined"
     id: material_icons_48
     size: 48
     bpp: 4
@@ -700,11 +709,12 @@ font:
       - "\uf304" # battery_full
       - "\uf305" # battery_charging
       - "\uf302" # battery_unknown
-      - "\ue4ca" # wifi 1 bar
-      - "\ue4d9" # wifi 2 bar
-      - "\ue63e" # wifi 3 bar
-      - "\ue648" # no wifi
-      - "\uf34f" # moon stars (sleeping)
+      - "\ue050" # volume
+  - file: "gfonts://Material Symbols Outlined"
+    id: material_icons_100
+    size: 100
+    bpp: 4
+    glyphs:
       - "\ue32d" # speaker
       - "\ue043" # shuffle
       - "\ue040" # repeat
@@ -713,7 +723,13 @@ font:
       - "\ue034" # pause
       - "\ue01f" # previous
       - "\ue020" # next
-      - "\ue050" # volume
+  - file: "gfonts://Material Symbols Outlined"
+    id: material_icons_250
+    size: 250
+    bpp: 4
+    glyphs:
+      - "\uf34f" # moon stars (sleeping)
+      - "\uf068" # insert rfid card
   - file: "gfonts://JetBrains Mono"
     id: jetbrains_24
     size: 24
@@ -746,9 +762,9 @@ script:
   - id: show_volume_overlay
     mode: restart
     then:
-      - lvgl.widget.show: volume_overlay
+      - lvgl.widget.show: overlay_volume
       - delay: 2s
-      - lvgl.widget.hide: volume_overlay
+      - lvgl.widget.hide: overlay_volume
 
   # Clears encoder_active after 500 ms, allowing HA-side changes to sync again.
   # mode: restart resets the window on every new encoder tick.
@@ -761,6 +777,21 @@ script:
           value: 'false'
 
 text_sensor:
+  # sensor for media player state
+  - platform: homeassistant
+    id: media_player_state
+    entity_id: ${media_player_entity}
+
+  # sensors for current album name and artist
+  - platform: homeassistant
+    id: current_album_name
+    entity_id: ${media_player_entity}
+    attribute: media_album_name
+  - platform: homeassistant
+    id: current_album_artist
+    entity_id: ${media_player_entity}
+    attribute: media_album_artist
+
   # Hidden trigger: watches the media_player track id and refreshes queue sensors on change
   - platform: homeassistant
     id: mp_content_id
@@ -847,16 +878,6 @@ text_sensor:
     id: next_artwork
     name: "Next Artwork"
 
-  # sensors for album name and artist
-  - platform: homeassistant
-    id: current_album_name
-    entity_id: ${media_player_entity}
-    attribute: media_album_name
-  - platform: homeassistant
-    id: current_album_artist
-    entity_id: ${media_player_entity}
-    attribute: media_album_artist
-
 online_image:
   - id: album_art_img
     type: RGB565
@@ -875,14 +896,12 @@ lvgl:
   byte_order: little_endian
   rotation: 90
   # disp_bg_color: black
-  on_idle:
-    timeout: 30s # to do > no timeout when playing and power connected
-    then:
-      - logger.log: "LVGL is idle"
-      - light.turn_off: backlight
-      - lvgl.pause:
   theme:
     dark_mode: true
+    bar:
+      bg_color: 0x333333
+      indicator:
+        bg_color: 0xFF00FF
     # page:
       # bg_opa: TRANSP
   style_definitions:
@@ -898,8 +917,17 @@ lvgl:
     - id: sans_large_style
       text_font: manrope_48
       text_color: white
-    - id: icon_48_style
+    - id: icon_small_style
+      text_font: material_icons_36
+      text_color: white
+    - id: icon_medium_style
       text_font: material_icons_48
+      text_color: white
+    - id: icon_large_style
+      text_font: material_icons_100
+      text_color: white
+    - id: icon_xlarge_style
+      text_font: material_icons_250
       text_color: white
   bottom_layer:
     # bg_color: black
@@ -908,50 +936,50 @@ lvgl:
     pad_all: 10
     widgets:
       - label:
-          id: top_timer_label
+          id: label_timer
           text: "0:00"
-          styles: [mono_large_style]
+          styles: [mono_small_style]
           align: TOP_LEFT
-          x: 5
+          x: 10
       - label:
           id: label_wifi_status
           text: "\ue63e" # wifi 3 bar (initial state)
-          styles: [icon_48_style]
+          styles: [icon_small_style]
           align: TOP_RIGHT
-          x: -5
+          x: -10
           hidden: true
       - label:
           id: label_notconnected
           text: "\ue648" # not connected
-          styles: [icon_48_style]
+          styles: [icon_small_style]
           align: TOP_RIGHT
-          x: -5
+          x: -10
       - label:
           id: label_battery_status
           text: "\uf302" # battery unknown (initial state, before voltage is read)
-          styles: [icon_48_style]
+          styles: [icon_medium_style]
           align_to:
-            id: label_wifi
+            id: label_wifi_status
             align: OUT_LEFT_MID
-            x: -30
+            x: -20
       - label:
           id: label_battery_charging
           text: "\uf305" # battery charging
-          styles: [icon_48_style]
+          styles: [icon_medium_style]
           align_to:
-            id: label_wifi
+            id: label_wifi_status
             align: OUT_LEFT_MID
-            x: -30
+            x: -20
           hidden: true
       # ----- VOLUME OVERLAY -----
       - obj:
-          id: volume_overlay
+          id: overlay_volume
           hidden: true
           width: 680
           height: 120
           align: CENTER
           # bg_color: 0x1E1E1E
-          bg_opa: 80%
+          bg_opa: 90%
           radius: 20
           pad_left: 24
           pad_right: 24
@@ -963,17 +991,17 @@ lvgl:
           widgets:
             - label:
                 text: "\ue050" # volume
-                styles: [icon_48_style]
+                styles: [icon_medium_style]
             - bar:
-                id: volume_bar
-                width: 440
+                id: bar_volume
+                width: 560
                 height: 30
                 value: 0
-                bg_color: 0x333333
-                bg_opa: COVER
-                indicator:
-                  bg_color: 0xFF00FF
-                  bg_opa: COVER
+                # bg_color: 0x333333
+                # bg_opa: COVER
+                # indicator:
+                  # bg_color: 0xFF00FF
+                  # bg_opa: COVER
             # - label:
             #     id: volume_label
             #     text: "50%"
@@ -984,9 +1012,17 @@ lvgl:
     - id: page_nfc
       widgets:
         - label:
-            text: "Scan NFC Tag to Play"
-            align: CENTER
+              id: label_nfc
+              text: "\uf068" # insert rfid card
+              styles: [icon_xlarge_style]
+              align: CENTER
+        - label:
+            text: "Scan Music Card to Play"
             styles: [mono_large_style]
+            align_to:
+              id: label_nfc
+              align: OUT_BOTTOM_MID
+              y: 30
     - id: page_artist
       widgets:
         - label:
@@ -999,6 +1035,23 @@ lvgl:
             text: "No Track Playing"
             align: CENTER
             styles: [mono_large_style]
+  on_idle:
+    timeout: 30s
+    then:
+      - if:
+          condition:
+            and:
+              - lambda: 'return id(media_player_state).state == "playing";'
+              - binary_sensor.is_on: charging
+          then:
+            - logger.log: "LVGL idle but playing and charging — staying awake"
+            - lambda: 'lv_disp_trig_activity(NULL);'  # reset idle timer so it re-checks in 30s
+          else:
+            - logger.log: "LVGL is idle"
+            - light.turn_off: backlight
+            - lvgl.pause:
+
+
 
 
   # bottom_layer:
@@ -1098,7 +1151,7 @@ lvgl:
   #       # Volume overlay — floats over page content, hidden until encoder or HA changes volume.
   #       # mode: restart in the script ensures it auto-hides 2 s after the last step.
   #       - obj:
-  #           id: volume_overlay
+  #           id: overlay_volume
   #           hidden: true
   #           width: 680
   #           height: 70
@@ -1124,7 +1177,7 @@ lvgl:
   #                 text_font: icon_font_24
   #                 text_color: 0x00FF88
   #             - bar:
-  #                 id: volume_bar
+  #                 id: bar_volume
   #                 width: 490
   #                 height: 16
   #                 min_value: 0
