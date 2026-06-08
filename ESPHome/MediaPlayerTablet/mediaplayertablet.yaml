@@ -988,6 +988,8 @@ lvgl:
   # disp_bg_color: black
   theme:
     dark_mode: true
+    pages:
+      pad_all: 20
     bar:
       bg_color: 0x333333
       bg_opa: COVER
@@ -1024,27 +1026,30 @@ lvgl:
     # bg_color: black
   top_layer:
     # bg_opa: TRANSP
-    pad_all: 10
+    pad_top: 10
+    pad_bottom: 10
+    pad_left: 20
+    pad_right: 20
     widgets:
       - label:
           id: label_timer
           text: "0:00"
           styles: [mono_small_style]
           align: TOP_LEFT
-          x: 10
+          # x: 10
       - label:
           id: label_wifi_status
           text: "\ue63e" # wifi 3 bar (initial state)
           styles: [icon_small_style]
           align: TOP_RIGHT
-          x: -10
+          # x: -10
           hidden: true
       - label:
           id: label_notconnected
           text: "\ue648" # not connected
           styles: [icon_small_style]
           align: TOP_RIGHT
-          x: -10
+          # x: -10
       - label:
           id: label_battery_status
           text: "\uf302" # battery unknown (initial state, before voltage is read)
@@ -1071,7 +1076,6 @@ lvgl:
           width: 670
           height: SIZE_CONTENT
           align: CENTER
-          # bg_color: 0x1E1E1E
           bg_opa: 90%
           radius: 20
           pad_all: 25
@@ -1086,17 +1090,6 @@ lvgl:
                 height: 30
                 value: 0
                 align: RIGHT_MID
-                # bg_color: 0x333333
-                # bg_opa: COVER
-                # indicator:
-                  # bg_color: 0xFF00FF
-                  # bg_opa: COVER
-            # - label:
-            #     id: volume_label
-            #     text: "50%"
-            #     styles: [label_style]
-            #     width: 120
-            #     text_align: RIGHT
   pages:
     - id: page_nfc
       widgets:
@@ -1120,72 +1113,85 @@ lvgl:
             styles: [mono_large_style]
     - id: page_player
       widgets:
-        - label:
-            id: label_current_album_artist
-            text: "Current Album Artist"
-            align: CENTER
-            y: -200
-            styles: [mono_large_style]
-        - label:
-            id: label_current_album_name
-            text: "Current Album Name"
-            align_to:
-              id: label_current_album_artist
-              align: OUT_BOTTOM_MID
-              y: 10
-            styles: [mono_large_style]
-        - label:
-            id: label_current_artist
-            text: "Current Artist"
-            align_to:
-              id: label_current_album_name
-              align: OUT_BOTTOM_MID
-              y: 10
-            styles: [mono_large_style]
-        - label:
-            id: label_current_track
-            text: "Current Track"
-            align_to:
-              id: label_current_artist
-              align: OUT_BOTTOM_MID
-              y: 10
-            styles: [mono_large_style]
-        - label:
-            id: label_next_artist
-            text: "Next Artist"
-            align_to:
-              id: label_current_track
-              align: OUT_BOTTOM_MID
-              y: 10
-            styles: [mono_large_style]
-        - label:
-            id: label_next_track
-            text: "Next Track"
-            align_to:
-              id: label_next_artist
-              align: OUT_BOTTOM_MID
-              y: 10
-            styles: [mono_large_style]
+      # TO DO limit width of text fields (truncated with ... or scrolling)
+        # current album artwork on the left (with album on top and track on bottom)
         - image:
             id: image_current_album
             src: current_album_img
             width: 400
             height: 400
-            align: TOP_LEFT
-            x: 10
-            y: 50
+            align: LEFT_MID
+            # x: 10
+            # y: 50
             radius: 8
             hidden: true
+        - label:
+            id: label_current
+            text: "Current Album"
+            align_to:
+              id: image_current_album
+              align: OUT_TOP_LEFT
+              y: -10
+            styles: [mono_small_style]
+        - label:
+            id: label_current_album_name
+            text: "Current Album Name"
+            align_to:
+              id: label_current
+              align: OUT_TOP_LEFT
+              y: -20
+            styles: [sans_large_style]
+        - label:
+            id: label_current_album_artist
+            text: "Current Album Artist"
+            align_to:
+              id: label_current_album_name
+              align: OUT_TOP_LEFT
+              y: -10
+            styles: [sans_large_style]
+        - label:
+            id: label_current_artist
+            text: "Current Artist"
+            align_to:
+              id: image_current_album
+              align: OUT_BOTTOM_LEFT
+              y: 20
+            styles: [sans_large_style]
+        - label:
+            id: label_current_track
+            text: "Current Track"
+            align_to:
+              id: label_current_artist
+              align: OUT_BOTTOM_LEFT
+              y: 10
+            styles: [sans_large_style]
+        # next album artwork on the right (with track on bottom)
         - image:
             id: image_next_album
             src: next_album_img
             width: 200
             height: 200
-            align: TOP_RIGHT
-            x: -10
-            y: 50
+            align: RIGHT_MID
+            # x: -10
+            y: -100
             radius: 8
             hidden: true
+        - label:
+            id: label_next_artist
+            text: "Next Artist"
+            align_to:
+              id: image_next_album
+              align: OUT_BOTTOM_RIGHT
+              y: 20
+            styles: [sans_large_style]
+        - label:
+            id: label_next_track
+            text: "Next Track"
+            align_to:
+              id: label_next_artist
+              align: OUT_BOTTOM_RIGHT
+              y: 10
+            styles: [sans_large_style]
   on_idle:
     timeout: 30s
     then:
