@@ -448,10 +448,17 @@ binary_sensor:
             data:
               entity_id: ${media_player_entity}
 
-  # M5Stack Unit Encoder
-  # - platform: m5unit_encoder
-  #   m5unit_encoder_id: unit_encoder
-  #   name: "Encoder Button"
+  # sensor for shuffle
+  - platform: homeassistant
+    id: shuffle_state
+    entity_id: ${media_player_entity}
+    attribute: shuffle
+    on_value:
+      then:
+        - lvgl.widget.update:
+            id: button_shuffle
+            state:
+              checked: !lambda return x;
 
   - platform: status
     name: "Status"
@@ -804,6 +811,29 @@ text_sensor:
   - platform: homeassistant
     id: media_player_state
     entity_id: ${media_player_entity}
+    on_value:
+      then:
+        - lvgl.widget.update:
+            id: button_play
+            state:
+              checked: !lambda return (x == "playing");
+        - if:
+            condition:
+              lambda: return (x == "playing");
+            then:
+              - lvgl.label.update:
+                  id: label_button_play
+                  text: "\ue034" # pause
+            else:
+              - lvgl.label.update:
+                  id: label_button_play
+                  text: "\ue037" # play
+
+  # sensor for repeat
+  - platform: homeassistant
+    id: repeat_state
+    entity_id: ${media_player_entity}
+    attribute: repeat
 
   # sensors for current album name and artist
   - platform: homeassistant
@@ -1203,6 +1233,10 @@ lvgl:
             height: 60
             radius: 30
             bg_color: ${highlight_color}
+            checked:
+              bg_color: ${highlight_color}
+              bg_opa: COVER
+              text_color: white
             widgets:
               - label:
                   align: CENTER
@@ -1214,6 +1248,58 @@ lvgl:
                   action: media_player.media_play_pause
                   data:
                     entity_id: ${media_player_entity}
+        - button:
+            id: button_previous
+            align_to:
+              id: button_play
+              align: OUT_LEFT_MID
+              x: -40
+            bg_opa: TRANSP
+            widgets:
+              - label:
+                  align: CENTER
+                  id: label_button_previous
+                  text: "\ue01f"
+                  styles: [icon_medium_style]
+            on_click:
+              - homeassistant.action:
+                  action: media_player.media_previous_track
+                  data:
+                    entity_id: ${media_player_entity}
+        - button:
+            id: button_next
+            align_to:
+              id: button_play
+              align: OUT_RIGHT_MID
+              x: 40
+            bg_opa: TRANSP
+            widgets:
+              - label:
+                  align: CENTER
+                  id: label_button_next
+                  text: "\ue020"
+                  styles: [icon_medium_style]
+            on_click:
+              - homeassistant.action:
+                  action: media_player.media_next_track
+                  data:
+                    entity_id: ${media_player_entity}
+        - button:
+            id: button_shuffle
+            align_to:
+              id: button_previous
+              align: OUT_RIGHT_MID
+              x: -40
+            checkable: true
+            bg_opa: TRANSP
+            checked:
+              text_color: ${highlight_color}
+            widgets:
+              - label:
+                  align: CENTER
+                  id: label_button_shuffle
+                  text: "\ue043"
+                  styles: [icon_medium_style]
   on_idle:
     timeout: 30s
     then:
