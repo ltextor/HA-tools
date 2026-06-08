@@ -45,6 +45,7 @@ esphome:
     build_flags:
       - -DUSE_RGB565LE  # Little-endian RGB565 for LVGL images (required for Tab5 V2)
   on_boot:
+    priority: -100 # test to fix boot loop
     then:
       # read the RTC time once when the system boots
       - rx8130.read_time:
@@ -56,11 +57,29 @@ esphome:
           brightness: 60%
 
 esp32:
-  variant: esp32p4
+  board: esp32-p4-evboard # test to fix boot loop
+  # variant: esp32p4
   engineering_sample: true  # not part of the official m5stack yaml, but without it my esp32-p4 crashed during boot
   flash_size: 16MB
+  cpu_frequency: 360MHz # test to fix boot loop
   framework:
     type: esp-idf
+    sdkconfig_options:
+      # ── Memory / PSRAM ──────────────────────────────
+      CONFIG_SPIRAM_USE_MALLOC: "y"
+      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "4096"
+      CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "32768"
+      CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY: "y"
+      # ── Task Stack Sizes ────────────────────────────
+      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
+      CONFIG_FREERTOS_IDLE_TASK_STACKSIZE: "2048"
+      # ── PSRAM Speed (choose one) ────────────────────
+      # CONFIG_SPIRAM_SPEED_200M: "y"   # Keep if stable
+      CONFIG_SPIRAM_SPEED_100M: "y"     # Use if seeing corruption
+      # ── Stability ──────────────────────────────────
+      CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK: "y"
+      CONFIG_ESP_INT_WDT_TIMEOUT_MS: "800"
+    # log_level: DEBUG # test to fix boot loop > might reveal the underlying issue in the logs
     advanced:
       enable_idf_experimental_features: true
 
@@ -135,6 +154,7 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  # fast_connect : true # test to fix boot loop
   ap:
     ssid: "Media Player Tablet"
     password: !secret fallback_password
@@ -146,7 +166,8 @@ captive_portal:
 
 psram:
   mode: hex
-  speed: 200MHz
+  # speed: 200MHz
+  speed: 100MHz # test to fix boot loop
 
 i2c:
   - id: bsp_bus
@@ -237,6 +258,7 @@ display:
     reset_pin:
       pi4ioe5v6408: pi4ioe1
       number: 4
+      # inverted: true # test to fix boot loop > not working
     show_test_card: false
 
 touchscreen:
@@ -745,11 +767,11 @@ font:
   #   size: 16
   #   bpp: 4
   #   glyphsets: [GF_Latin_Core]
-  - file: "gfonts://Manrope"
-    id: manrope_24
-    size: 24
-    bpp: 4
-    glyphsets: [GF_Latin_Core]
+  # - file: "gfonts://Manrope"
+  #   id: manrope_24
+  #   size: 24
+  #   bpp: 4
+  #   glyphsets: [GF_Latin_Core]
   - file: "gfonts://Manrope"
     id: manrope_48
     size: 48
@@ -888,6 +910,19 @@ text_sensor:
   - platform: template
     id: current_artwork
     name: "Current Artwork"
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+            then:
+              - lvgl.widget.hide: image_current_album
+              - online_image.set_url:
+                  id: current_album_img
+                  url: !lambda 'return x;'
+              # - component.update: current_album_img
+            else:
+              - lvgl.widget.hide: image_current_album
   - platform: template
     id: next_artist
     name: "Next Artist"
@@ -907,20 +942,45 @@ text_sensor:
   - platform: template
     id: next_artwork
     name: "Next Artwork"
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+            then:
+              - lvgl.widget.hide: image_next_album
+              - online_image.set_url:
+                  id: next_album_img
+                  url: !lambda 'return x;'
+              # - component.update: next_album_img
+            else:
+              - lvgl.widget.hide: image_next_album
 
 online_image:
-  - id: album_art_img
+  - id: current_album_img
     type: RGB565
     url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
     format: jpg
-    update_interval: never
+    # update_interval: never
+    resize: 400x400
+    on_download_finished:
+      then:
+        - lvgl.image.update:
+            id: image_current_album
+            src: current_album_img
+        - lvgl.widget.show: image_current_album
+  - id: next_album_img
+    type: RGB565
+    url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
+    format: jpg
+    # update_interval: never
     resize: 200x200
-    # on_download_finished:
-    #   then:
-    #     - lvgl.image.update:
-    #         id: album_art_widget
-    #         src: album_art_img
-    #     - lvgl.widget.show: album_art_widget
+    on_download_finished:
+      then:
+        - lvgl.image.update:
+            id: image_next_album
+            src: next_album_img
+        - lvgl.widget.show: image_next_album
 
 lvgl:
   byte_order: little_endian
@@ -930,6 +990,7 @@ lvgl:
     dark_mode: true
     bar:
       bg_color: 0x333333
+      bg_opa: COVER
       indicator:
         bg_color: 0xFF00FF
     # page:
@@ -941,9 +1002,9 @@ lvgl:
     - id: mono_large_style
       text_font: jetbrains_48
       text_color: white
-    - id: sans_small_style
-      text_font: manrope_24
-      text_color: white
+    # - id: sans_small_style
+    #   text_font: manrope_24
+    #   text_color: white
     - id: sans_large_style
       text_font: manrope_48
       text_color: white
@@ -992,6 +1053,7 @@ lvgl:
             id: label_wifi_status
             align: OUT_LEFT_MID
             x: -20
+            y: 4
       - label:
           id: label_battery_charging
           text: "\uf305" # battery charging
@@ -1000,33 +1062,30 @@ lvgl:
             id: label_wifi_status
             align: OUT_LEFT_MID
             x: -20
+            y: 4
           hidden: true
       # ----- VOLUME OVERLAY -----
       - obj:
           id: overlay_volume
           hidden: true
-          width: 680
-          height: 120
+          width: 670
+          height: SIZE_CONTENT
           align: CENTER
           # bg_color: 0x1E1E1E
           bg_opa: 90%
           radius: 20
-          pad_left: 24
-          pad_right: 24
-          layout:
-            type: flex
-            flex_flow: row
-            flex_align_cross: center
-            flex_align_main: space_between
+          pad_all: 25
           widgets:
             - label:
                 text: "\ue050" # volume
                 styles: [icon_medium_style]
+                align: LEFT_MID
             - bar:
                 id: bar_volume
-                width: 560
+                width: 550
                 height: 30
                 value: 0
+                align: RIGHT_MID
                 # bg_color: 0x333333
                 # bg_opa: COVER
                 # indicator:
@@ -1052,7 +1111,7 @@ lvgl:
             align_to:
               id: label_nfc
               align: OUT_BOTTOM_MID
-              y: 30
+              y: 10
     - id: page_artist
       widgets:
         - label:
@@ -1107,6 +1166,26 @@ lvgl:
               align: OUT_BOTTOM_MID
               y: 10
             styles: [mono_large_style]
+        - image:
+            id: image_current_album
+            src: current_album_img
+            width: 400
+            height: 400
+            align: TOP_LEFT
+            x: 10
+            y: 50
+            radius: 8
+            hidden: true
+        - image:
+            id: image_next_album
+            src: next_album_img
+            width: 200
+            height: 200
+            align: TOP_RIGHT
+            x: -10
+            y: 50
+            radius: 8
+            hidden: true
   on_idle:
     timeout: 30s
     then:
