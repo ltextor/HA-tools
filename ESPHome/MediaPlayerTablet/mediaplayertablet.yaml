@@ -453,7 +453,7 @@ binary_sensor:
     id: shuffle_state
     entity_id: ${media_player_entity}
     attribute: shuffle
-    on_value:
+    on_state:
       then:
         - lvgl.widget.update:
             id: button_shuffle
@@ -813,10 +813,10 @@ text_sensor:
     entity_id: ${media_player_entity}
     on_value:
       then:
-        - lvgl.widget.update:
-            id: button_play
-            state:
-              checked: !lambda return (x == "playing");
+        # - lvgl.widget.update:
+            # id: button_play
+            # state:
+              # checked: !lambda return (x == "playing");
         - if:
             condition:
               lambda: return (x == "playing");
@@ -834,6 +834,30 @@ text_sensor:
     id: repeat_state
     entity_id: ${media_player_entity}
     attribute: repeat
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: return (x == "all");
+            then:
+              - lvgl.label.update:
+                  id: label_button_repeat
+                  text: "\ue040" # repeat (magenta)
+                  text_color: ${highlight_color}
+            else:
+              if:
+                condition:
+                  lambda: return (x == "one");
+                then:
+                  - lvgl.label.update:
+                      id: label_button_repeat
+                      text: "\ue041" # repeat_one (magenta)
+                      text_color: ${highlight_color}
+                else:
+                  - lvgl.label.update:
+                      id: label_button_repeat
+                      text: "\ue040" # repeat (gray)
+                      text_color: 0x888888
 
   # sensors for current album name and artist
   - platform: homeassistant
@@ -1019,7 +1043,7 @@ lvgl:
   # disp_bg_color: black
   theme:
     dark_mode: true
-    pages:
+    page:
       pad_all: 20
     bar:
       bg_color: 0x333333
@@ -1228,15 +1252,15 @@ lvgl:
             id: button_play
             align: BOTTOM_MID
             y: 30
-            checkable: true
+            # checkable: true
             width: 60
             height: 60
             radius: 30
             bg_color: ${highlight_color}
-            checked:
-              bg_color: ${highlight_color}
-              bg_opa: COVER
-              text_color: white
+            # checked:
+              # bg_color: ${highlight_color}
+              # bg_opa: COVER
+              # text_color: white
             widgets:
               - label:
                   align: CENTER
@@ -1288,7 +1312,7 @@ lvgl:
             id: button_shuffle
             align_to:
               id: button_previous
-              align: OUT_RIGHT_MID
+              align: OUT_LEFT_MID
               x: -40
             checkable: true
             bg_opa: TRANSP
@@ -1300,6 +1324,35 @@ lvgl:
                   id: label_button_shuffle
                   text: "\ue043"
                   styles: [icon_medium_style]
+            on_click:
+              - homeassistant.action:
+                  action: media_player.shuffle_set
+                  data:
+                    entity_id: ${media_player_entity}
+                    shuffle: !lambda return x;
+        - button:
+            id: button_repeat
+            align_to:
+              id: button_next
+              align: OUT_RIGHT_MID
+              x: 40
+            bg_opa: TRANSP
+            widgets:
+              - label:
+                  align: CENTER
+                  id: label_button_repeat
+                  text: "\ue040"
+                  text_color: 0x888888
+                  styles: [icon_medium_style]
+            on_click:
+              - homeassistant.action:
+                  action: media_player.repeat_set
+                  data:
+                    entity_id: ${media_player_entity}
+                    repeat: !lambda |
+                      if (id(repeat_state).state == "off") return "all";
+                      if (id(repeat_state).state == "all") return "one";
+                      return "off";
   on_idle:
     timeout: 30s
     then:
