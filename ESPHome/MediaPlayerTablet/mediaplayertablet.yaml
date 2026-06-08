@@ -741,8 +741,8 @@ font:
       - "\uf302" # battery_unknown
       - "\ue050" # volume
   - file: "gfonts://Material Symbols Outlined"
-    id: material_icons_100
-    size: 100
+    id: material_icons_60
+    size: 60
     bpp: 4
     glyphs:
       - "\ue32d" # speaker
@@ -751,8 +751,8 @@ font:
       - "\ue041" # repeat_one
       - "\ue037" # play
       - "\ue034" # pause
-      - "\ue01f" # previous
-      - "\ue020" # next
+      - "\ue045" # previous
+      - "\ue044" # next
   - file: "gfonts://Material Symbols Outlined"
     id: material_icons_250
     size: 250
@@ -781,8 +781,8 @@ font:
   #   bpp: 4
   #   glyphsets: [GF_Latin_Core]
   - file: "gfonts://Manrope"
-    id: manrope_48
-    size: 48
+    id: manrope_32
+    size: 32
     bpp: 4
     glyphsets: [GF_Latin_Core]
 
@@ -857,7 +857,7 @@ text_sensor:
                   - lvgl.label.update:
                       id: label_button_repeat
                       text: "\ue040" # repeat (gray)
-                      text_color: 0x888888
+                      text_color: 0x666666
 
   # sensors for current album name and artist
   - platform: homeassistant
@@ -1043,15 +1043,13 @@ lvgl:
   # disp_bg_color: black
   theme:
     dark_mode: true
-    page:
-      pad_all: 20
+    # page:
+    #   pad_all: 20
     bar:
       bg_color: 0x333333
       bg_opa: COVER
       indicator:
         bg_color: ${highlight_color}
-    # page:
-      # bg_opa: TRANSP
   style_definitions:
     - id: mono_small_style
       text_font: jetbrains_24
@@ -1063,7 +1061,7 @@ lvgl:
     #   text_font: manrope_24
     #   text_color: white
     - id: sans_large_style
-      text_font: manrope_48
+      text_font: manrope_32
       text_color: white
     - id: icon_small_style
       text_font: material_icons_36
@@ -1072,13 +1070,13 @@ lvgl:
       text_font: material_icons_48
       text_color: white
     - id: icon_large_style
-      text_font: material_icons_100
+      text_font: material_icons_60
       text_color: white
     - id: icon_xlarge_style
       text_font: material_icons_250
       text_color: white
-  bottom_layer:
-    # bg_color: black
+  # bottom_layer:
+  #   bg_color: black
   top_layer:
     # bg_opa: TRANSP
     pad_top: 10
@@ -1167,106 +1165,110 @@ lvgl:
             align: CENTER
             styles: [mono_large_style]
     - id: page_player
+      pad_all: 20
       widgets:
       # TO DO limit width of text fields (truncated with ... or scrolling)
-        # current album artwork on the left (with album on top and track on bottom)
+        # current album
+        - label:
+            id: label_current_album_artist
+            text: "Current Album Artist"
+            align: TOP_MID
+            text_align: CENTER
+            styles: [sans_large_style]
+        - label:
+            id: label_current_album_name
+            text: "Current Album Name"
+            align_to:
+              id: label_current_album_artist
+              align: OUT_BOTTOM_MID
+              y: 10
+            text_align: CENTER
+            styles: [sans_large_style]
+        # current album artwork and track on the left
         - image:
             id: image_current_album
             src: current_album_img
             width: 400
             height: 400
             align: LEFT_MID
-            # x: 10
-            # y: 50
             radius: 8
             hidden: true
         - label:
             id: label_current
-            text: "Current Album"
+            text: "Current Track"
             align_to:
               id: image_current_album
               align: OUT_TOP_LEFT
               y: -10
             styles: [mono_small_style]
         - label:
-            id: label_current_album_name
-            text: "Current Album Name"
+            id: label_current_track
+            text: "Current Track"
             align_to:
-              id: label_current
-              align: OUT_TOP_LEFT
-              y: -20
-            styles: [sans_large_style]
-        - label:
-            id: label_current_album_artist
-            text: "Current Album Artist"
-            align_to:
-              id: label_current_album_name
-              align: OUT_TOP_LEFT
-              y: -10
+              id: image_current_album
+              align: OUT_RIGHT_BOTTOM
+              x: 20
             styles: [sans_large_style]
         - label:
             id: label_current_artist
             text: "Current Artist"
             align_to:
-              id: image_current_album
-              align: OUT_BOTTOM_LEFT
-              y: 20
+              id: label_current_track
+              align: OUT_TOP_LEFT
+              y: -10
             styles: [sans_large_style]
-        - label:
-            id: label_current_track
-            text: "Current Track"
-            align_to:
-              id: label_current_artist
-              align: OUT_BOTTOM_LEFT
-              y: 10
-            styles: [sans_large_style]
-        # next album artwork on the right (with track on bottom)
+        # next album artwork and track on the right
         - image:
             id: image_next_album
             src: next_album_img
             width: 200
             height: 200
             align: RIGHT_MID
-            # x: -10
             y: -100
             radius: 8
             hidden: true
         - label:
-            id: label_next_artist
-            text: "Next Artist"
+            id: label_next
+            text: "Next Track"
             align_to:
               id: image_next_album
-              align: OUT_BOTTOM_RIGHT
-              y: 20
-            styles: [sans_large_style]
+              align: OUT_TOP_RIGHT
+              y: -10
+            text_align: RIGHT
+            styles: [mono_small_style]
         - label:
             id: label_next_track
             text: "Next Track"
             align_to:
-              id: label_next_artist
-              align: OUT_BOTTOM_RIGHT
-              y: 10
+              id: image_next_album
+              align: OUT_LEFT_BOTTOM
+              x: -20
+            text_align: RIGHT
+            styles: [sans_large_style]
+        - label:
+            id: label_next_artist
+            text: "Next Artist"
+            align_to:
+              id: label_next_track
+              align: OUT_TOP_RIGHT
+              y: -10
+            text_align: RIGHT
             styles: [sans_large_style]
         # player controls
         - button:
             id: button_play
             align: BOTTOM_MID
-            y: 30
-            # checkable: true
-            width: 60
-            height: 60
-            radius: 30
+            # y: -30
+            width: 80
+            height: 80
+            radius: 40
             bg_color: ${highlight_color}
-            # checked:
-              # bg_color: ${highlight_color}
-              # bg_opa: COVER
-              # text_color: white
             widgets:
               - label:
                   align: CENTER
                   id: label_button_play
                   text: "\ue037"
-                  styles: [icon_medium_style]
+                  styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_play_pause
@@ -1283,8 +1285,8 @@ lvgl:
               - label:
                   align: CENTER
                   id: label_button_previous
-                  text: "\ue01f"
-                  styles: [icon_medium_style]
+                  text: "\ue045"
+                  styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_previous_track
@@ -1301,8 +1303,8 @@ lvgl:
               - label:
                   align: CENTER
                   id: label_button_next
-                  text: "\ue020"
-                  styles: [icon_medium_style]
+                  text: "\ue044"
+                  styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_next_track
@@ -1316,14 +1318,16 @@ lvgl:
               x: -40
             checkable: true
             bg_opa: TRANSP
+            text_color: 0x666666
+            styles: [icon_large_style]
             checked:
+              bg_opa: TRANSP
               text_color: ${highlight_color}
             widgets:
               - label:
                   align: CENTER
                   id: label_button_shuffle
                   text: "\ue043"
-                  styles: [icon_medium_style]
             on_click:
               - homeassistant.action:
                   action: media_player.shuffle_set
@@ -1342,8 +1346,8 @@ lvgl:
                   align: CENTER
                   id: label_button_repeat
                   text: "\ue040"
-                  text_color: 0x888888
-                  styles: [icon_medium_style]
+                  text_color: 0x666666
+                  styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.repeat_set
@@ -1353,6 +1357,22 @@ lvgl:
                       if (id(repeat_state).state == "off") return "all";
                       if (id(repeat_state).state == "all") return "one";
                       return "off";
+        - button:
+            id: button_external_speaker
+            align: BOTTOM_RIGHT
+            # y: -30
+            checkable: true
+            bg_opa: TRANSP
+            text_color: 0x666666
+            styles: [icon_large_style]
+            checked:
+              bg_opa: TRANSP
+              text_color: ${highlight_color}
+            widgets:
+              - label:
+                  align: CENTER
+                  id: label_button_external_speaker
+                  text: "\ue32d"
   on_idle:
     timeout: 30s
     then:
@@ -1368,146 +1388,3 @@ lvgl:
             - logger.log: "LVGL is idle"
             - light.turn_off: backlight
             - lvgl.pause:
-
-
-
-
-  # bottom_layer:
-  #   bg_color: 0x121212
-  # style_definitions:
-  #   - id: title_style
-  #     text_font: roboto_font_48
-  #     text_color: 0xEAEAEA
-  #   - id: label_style
-  #     text_font: roboto_font_24
-  #     text_color: 0xA0A0A0
-  #   - id: value_style
-  #     text_font: roboto_font_48
-  #     text_color: 0x00FF88
-  #   - id: card_style
-  #     bg_color: 0x1E1E1E
-  #     bg_opa: 80%
-  #     border_width: 1
-  #     border_color: 0x333333
-  #     radius: 12
-  #     pad_all: 20
-  # pages:
-  #   - id: main_page
-  #     widgets:
-  #       - obj:
-  #           width: 1240
-  #           height: 680
-  #           align: CENTER
-  #           layout:
-  #             type: flex
-  #             flex_flow: column
-  #             flex_align_main: space_evenly
-  #             flex_align_cross: center
-  #           widgets:
-  #             - label:
-  #                 text: "System Test Screen"
-  #                 styles: [title_style]
-  #             - obj:
-  #                 width: 1200
-  #                 height: 450
-  #                 bg_opa: 0%
-  #                 layout:
-  #                   type: flex
-  #                   flex_flow: row
-  #                   flex_align_main: space_around
-  #                   flex_align_cross: center
-  #                 widgets:
-  #                   - obj:
-  #                       width: 550
-  #                       height: 380
-  #                       styles: [card_style]
-  #                       layout:
-  #                         type: flex
-  #                         flex_flow: column
-  #                         flex_align_main: space_around
-  #                         flex_align_cross: center
-  #                       widgets:
-  #                         - label:
-  #                             text: "Currently Playing"
-  #                             styles: [label_style]
-  #                         - image:
-  #                             id: album_art_widget
-  #                             src: album_art_img
-  #                             width: 200
-  #                             height: 200
-  #                             radius: 12
-  #                             hidden: true
-  #                             on_click:
-  #                               - homeassistant.service:
-  #                                   service: media_player.media_play_pause
-  #                                   data:
-  #                                     entity_id: ${media_player_entity}
-  #                         - label:
-  #                             id: track_label
-  #                             text: "No Track Playing"
-  #                             styles: [title_style]
-  #                             width: 500
-  #                             long_mode: SCROLL_CIRCULAR
-  #                   - obj:
-  #                       width: 550
-  #                       height: 380
-  #                       styles: [card_style]
-  #                       layout:
-  #                         type: flex
-  #                         flex_flow: column
-  #                         flex_align_main: space_around
-  #                         flex_align_cross: center
-  #                       widgets:
-  #                         - label:
-  #                             text: "Battery Status"
-  #                             styles: [label_style]
-  #                         - label:
-  #                             id: battery_label
-  #                             text: "--- %"
-  #                             styles: [value_style]
-
-  #       # Volume overlay — floats over page content, hidden until encoder or HA changes volume.
-  #       # mode: restart in the script ensures it auto-hides 2 s after the last step.
-  #       - obj:
-  #           id: overlay_volume
-  #           hidden: true
-  #           width: 680
-  #           height: 70
-  #           align: BOTTOM_MID
-  #           y: -20
-  #           bg_color: 0x1E1E1E
-  #           bg_opa: 95%
-  #           border_width: 1
-  #           border_color: 0x333333
-  #           radius: 12
-  #           pad_left: 16
-  #           pad_right: 16
-  #           pad_top: 0
-  #           pad_bottom: 0
-  #           layout:
-  #             type: flex
-  #             flex_flow: row
-  #             flex_align_cross: center
-  #             flex_align_main: space_between
-  #           widgets:
-  #             - label:
-  #                 text: "\U0001F50A"
-  #                 text_font: icon_font_24
-  #                 text_color: 0x00FF88
-  #             - bar:
-  #                 id: bar_volume
-  #                 width: 490
-  #                 height: 16
-  #                 min_value: 0
-  #                 max_value: 100
-  #                 value: 50
-  #                 indicator:
-  #                   bg_color: 0x00FF88
-  #                 bg_color: 0x333333
-  #             - label:
-  #                 id: volume_label
-  #                 text: "50%"
-  #                 text_font: roboto_font_24
-  #                 text_color: 0xA0A0A0
-  #                 width: 70
-  #                 text_align: RIGHT
