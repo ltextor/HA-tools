@@ -21,6 +21,7 @@ substitutions:
   device_friendly_name: "Media Player Tablet"
   media_player_entity: "media_player.media_player_tablet_2"  # Music Assistant version of the Home Assistant Media Player (add to Music Assistant manually)
   external_media_player_entity: "media_player.wohnzimmer_3"  # External media player (Music Assistant version) which can be used as external speaker
+  album_artist_sensor: "sensor.media_player_tablet_album_artist" # name of the HA sensor which provides the current album artist, used for the album artist fallback logic
   highlight_color: "0xFF00FF" # highlight color used for buttons, bars etc.
 
 globals:
@@ -66,20 +67,94 @@ esp32:
   framework:
     type: esp-idf
     sdkconfig_options:
-      # ── Memory / PSRAM ──────────────────────────────
+      # # ── Memory / PSRAM ──────────────────────────────
+      # CONFIG_SPIRAM_USE_MALLOC: "y"
+      # CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "4096"
+      # CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "32768"
+      # CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY: "y"
+      # # ── Task Stack Sizes ────────────────────────────
+      # CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
+      # CONFIG_FREERTOS_IDLE_TASK_STACKSIZE: "2048"
+      # # ── PSRAM Speed (choose one) ────────────────────
+      # # CONFIG_SPIRAM_SPEED_200M: "y"   # Keep if stable
+      # CONFIG_SPIRAM_SPEED_100M: "y"     # Use if seeing corruption
+      # # ── Stability ──────────────────────────────────
+      # CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK: "y"
+      # CONFIG_ESP_INT_WDT_TIMEOUT_MS: "800"
+      
+      # new configuration to fix crashes
+      # ═══════════════════════════════════════════════════════════════════
+      # PSRAM ALLOCATION POLICY
+      # ═══════════════════════════════════════════════════════════════════
+      # Enable PSRAM for malloc() — REQUIRED for this build (framebuffer,
+      # LVGL buffers, audio ring, decode temps all need >520 KB internal SRAM)
       CONFIG_SPIRAM_USE_MALLOC: "y"
+
+      # Allocations ≤4 KB stay in fast internal SRAM; >4 KB go to PSRAM
+      # Keeps small, frequently accessed structures off the PSRAM bus
       CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "4096"
-      CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "32768"
-      CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY: "y"
-      # ── Task Stack Sizes ────────────────────────────
-      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
+
+      # Reserve 64 KB of internal SRAM that malloc() won't touch — used for:
+      #   - DMA descriptor chains (MIPI DSI, I2S, SDIO, SPI)
+      #   - ISR stacks and critical buffers
+      #   - TLS crypto scratch space
+      # CHANGED FROM: 32768 (too tight with 5 DMA engines + TLS)
+      CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "65536"
+
+      # PSRAM bus clock: 100 MHz (half of default 200 MHz)
+      # Slower clock improves signal integrity under heavy multi-master load
+      # DO NOT increase to 200 MHz — will worsen bus contention crashes
+      CONFIG_SPIRAM_SPEED_100M: "y"
+
+      # RISKY: Allows task stacks in PSRAM — can cause ISR issues if
+      # PSRAM bus is saturated when interrupt fires. If build fails without
+      # this, keep it but prioritize PSRAM bus reduction (LVGL buffer, image
+      # dedup). If build succeeds without it, REMOVE THIS LINE.
+      # CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY: "y"
+
+      # Move WiFi/LWIP buffers to PSRAM (frees internal SRAM for DMA descriptors)
+      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # TASK STACK SIZES
+      # ═══════════════════════════════════════════════════════════════════
+      # Main ESPHome loop task: runs JPEG decode, LVGL rendering, HTTP callbacks
+      # CHANGED FROM: 16384 (insufficient for deep JPEG decode call stacks)
+      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "24576"
+
+      # Idle task: minimal work (garbage collection, tickless idle)
       CONFIG_FREERTOS_IDLE_TASK_STACKSIZE: "2048"
-      # ── PSRAM Speed (choose one) ────────────────────
-      # CONFIG_SPIRAM_SPEED_200M: "y"   # Keep if stable
-      CONFIG_SPIRAM_SPEED_100M: "y"     # Use if seeing corruption
-      # ── Stability ──────────────────────────────────
+
+      # ═══════════════════════════════════════════════════════════════════
+      # WATCHDOG CONFIGURATION
+      # ═══════════════════════════════════════════════════════════════════
+      # INTERRUPT WATCHDOG: fires if interrupts are blocked/starved
+      # CRITICAL FIX: Raised from 800ms to 5000ms (5 seconds)
+      # WHY: Crash logs show legitimate operations (JPEG decode, audio read)
+      #      blocking for 2,300–4,489ms. An 800ms timeout causes reboots
+      #      during normal heavy operations, not actual failures.
+      CONFIG_ESP_INT_WDT_TIMEOUT_MS: "5000"
+
+      # TASK WATCHDOG: fires if a task doesn't yield (call delay/I/O)
+      # Set to 10 seconds to tolerate worst-case image download+decode
+      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "10"
+
+      # Don't monitor idle tasks — during heavy operations (JPEG decode),
+      # the main loop legitimately monopolizes one CPU core for 2+ seconds,
+      # preventing idle from running. This is expected behavior, not a deadlock.
+      CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0: "n"
+      CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1: "n"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # FREERTOS TUNING
+      # ═══════════════════════════════════════════════════════════════════
+      # FreeRTOS tick rate: 1000 Hz (1ms tick) — improves audio/display
+      # responsiveness (audio DMA refills every ~5ms, needs fast wake-up)
+      CONFIG_FREERTOS_HZ: "1000"
+
+      # Enable hardware watchpoint for stack overflow detection — useful for
+      # validating the increased stack sizes. No performance penalty.
       CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK: "y"
-      CONFIG_ESP_INT_WDT_TIMEOUT_MS: "800"
     # log_level: DEBUG # test to fix boot loop > might reveal the underlying issue in the logs
     advanced:
       enable_idf_experimental_features: true
@@ -133,12 +208,14 @@ api:
               - lvgl.page.show:
                   id: page_artist
                   animation: FADE_IN
+                  time: 500ms
               # - script.execute: fetch_artist_albums
             else:
               # album or playlist rfid card
               - lvgl.page.show:
                   id: page_player
                   animation: FADE_IN
+                  time: 500ms
               - homeassistant.action:
                   action: media_player.play_media
                   data:
@@ -604,6 +681,27 @@ sensor:
                     #       return std::string(buf);
                     - script.execute: show_volume_overlay
 
+  - platform: homeassistant
+    id: media_duration
+    entity_id: ${media_player_entity}
+    attribute: media_duration
+    on_value:
+      then:
+        - lvgl.bar.update:
+            id: bar_track_progress
+            min_value: 0
+            max_value: !lambda return x;
+
+  - platform: homeassistant
+    id: media_position
+    entity_id: ${media_player_entity}
+    attribute: media_position
+    on_value:
+      then:
+        - lvgl.bar.update:
+            id: bar_track_progress
+            value: !lambda return x;
+
 # Tab5 built-in battery discharges from full (8.23 V) to shutdown threshold (6.0 V)
   - platform: template
     name: "Battery Percentage"
@@ -702,6 +800,7 @@ rc522_i2c:
       - lvgl.page.show:
           id: page_nfc
           animation: FADE_IN
+          time: 500ms
 
 # M5Stack unit scroll
 external_components:
@@ -780,7 +879,7 @@ font:
   #   size: 24
   #   bpp: 4
   #   glyphsets: [GF_Latin_Core]
-  - file: "gfonts://Manrope"
+  - file: "gfonts://Manrope@600"
     id: manrope_32
     size: 32
     bpp: 4
@@ -859,7 +958,7 @@ text_sensor:
                       text: "\ue040" # repeat (gray)
                       text_color: 0x666666
 
-  # sensors for current album name and artist
+  # sensors for current album name, artist, track and artwork
   - platform: homeassistant
     id: current_album_name
     entity_id: ${media_player_entity}
@@ -869,102 +968,30 @@ text_sensor:
         - lvgl.label.update:
             id: label_current_album_name
             text: !lambda 'return x;'
+
   - platform: homeassistant
     id: current_album_artist
-    entity_id: ${media_player_entity}
-    attribute: media_album_artist
+    entity_id: ${album_artist_sensor} # use home assistant template sensor for fallback to track artist if album artist is unavailable
     on_value:
       then:
         - lvgl.label.update:
             id: label_current_album_artist
-            text: !lambda 'return x;'
+            text: !lambda return x;
 
-  # Hidden trigger: watches the media_player track id and refreshes queue sensors on change
   - platform: homeassistant
-    id: mp_content_id
-    entity_id: ${media_player_entity}
-    attribute: media_content_id
-    internal: true
-    on_value:
-      - homeassistant.action:
-          action: music_assistant.get_queue
-          data:
-            entity_id: ${media_player_entity}
-          capture_response: true
-          on_success:
-            - lambda: |-
-                JsonObjectConst q = response["response"]["${media_player_entity}"];
-
-                // ---- CURRENT ----
-                if (!q["current_item"].isNull()) {
-                  JsonObjectConst mi = q["current_item"]["media_item"];
-
-                  std::string artists;
-                  for (JsonVariantConst a : mi["artists"].as<JsonArrayConst>()) {
-                    if (!artists.empty()) artists += " / ";
-                    artists += a["name"].as<std::string>();
-                  }
-                  id(current_artist).publish_state(artists);
-                  id(current_track).publish_state(mi["name"].as<std::string>());
-
-                  std::string art;
-                  if (!mi["album"]["image"].isNull())
-                    art = mi["album"]["image"].as<std::string>();
-                  else if (!mi["image"].isNull())
-                    art = mi["image"].as<std::string>();
-                  id(current_artwork).publish_state(art);
-                } else {
-                  id(current_artist).publish_state("");
-                  id(current_track).publish_state("");
-                  id(current_artwork).publish_state("");
-                }
-
-                // ---- NEXT ----
-                if (!q["next_item"].isNull()) {
-                  JsonObjectConst mi = q["next_item"]["media_item"];
-
-                  std::string artists;
-                  for (JsonVariantConst a : mi["artists"].as<JsonArrayConst>()) {
-                    if (!artists.empty()) artists += " / ";
-                    artists += a["name"].as<std::string>();
-                  }
-                  id(next_artist).publish_state(artists);
-                  id(next_track).publish_state(mi["name"].as<std::string>());
-
-                  std::string art;
-                  if (!mi["album"]["image"].isNull())
-                    art = mi["album"]["image"].as<std::string>();
-                  else if (!mi["image"].isNull())
-                    art = mi["image"].as<std::string>();
-                  id(next_artwork).publish_state(art);
-                } else {
-                  id(next_artist).publish_state("");
-                  id(next_track).publish_state("");
-                  id(next_artwork).publish_state("");
-                }
-          on_error:
-            - logger.log: "get_queue action failed"
-
-  # sensors for current and next track info, updated by the above trigger
-  - platform: template
-    id: current_artist
-    name: "Current Artist"
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: label_current_artist
-            text: !lambda 'return x;'
-  - platform: template
     id: current_track
-    name: "Current Track"
+    entity_id: ${media_player_entity}
+    attribute: media_title
     on_value:
       then:
         - lvgl.label.update:
             id: label_current_track
             text: !lambda 'return x;'
-  - platform: template
-    id: current_artwork
-    name: "Current Artwork"
+
+  - platform: homeassistant
+    id: current_album_artwork
+    entity_id: ${media_player_entity}
+    attribute: entity_picture
     on_value:
       then:
         - if:
@@ -975,41 +1002,140 @@ text_sensor:
               - online_image.set_url:
                   id: current_album_img
                   url: !lambda 'return x;'
-              # - component.update: current_album_img
             else:
               - lvgl.widget.hide: image_current_album
-  - platform: template
-    id: next_artist
-    name: "Next Artist"
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: label_next_artist
-            text: !lambda 'return x;'
-  - platform: template
-    id: next_track
-    name: "Next Track"
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: label_next_track
-            text: !lambda 'return x;'
-  - platform: template
-    id: next_artwork
-    name: "Next Artwork"
-    on_value:
-      then:
-        - if:
-            condition:
-              lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
-            then:
-              - lvgl.widget.hide: image_next_album
-              - online_image.set_url:
-                  id: next_album_img
-                  url: !lambda 'return x;'
-              # - component.update: next_album_img
-            else:
-              - lvgl.widget.hide: image_next_album
+
+  # Hidden trigger: watches the media_player track id and refreshes queue sensors on change
+  # - platform: homeassistant
+  #   id: mp_content_id
+  #   entity_id: ${media_player_entity}
+  #   attribute: media_content_id
+  #   on_value:
+  #     - delay: 500ms # test to fix crashes
+  #     - homeassistant.action:
+  #         action: music_assistant.get_queue
+  #         data:
+  #           entity_id: ${media_player_entity}
+  #         capture_response: true
+  #         on_success:
+  #           - lambda: |-
+  #               JsonObjectConst q = response["response"]["${media_player_entity}"];
+
+  #               // ---- CURRENT ----
+  #               if (!q["current_item"].isNull()) {
+  #                 JsonObjectConst mi = q["current_item"]["media_item"];
+
+  #                 std::string artists;
+  #                 for (JsonVariantConst a : mi["artists"].as<JsonArrayConst>()) {
+  #                   if (!artists.empty()) artists += " / ";
+  #                   artists += a["name"].as<std::string>();
+  #                 }
+  #                 id(current_artist).publish_state(artists);
+  #                 id(current_track).publish_state(mi["name"].as<std::string>());
+
+  #                 std::string art;
+  #                 if (!mi["album"]["image"].isNull())
+  #                   art = mi["album"]["image"].as<std::string>();
+  #                 else if (!mi["image"].isNull())
+  #                   art = mi["image"].as<std::string>();
+  #                 id(current_artwork).publish_state(art);
+  #               } else {
+  #                 id(current_artist).publish_state("");
+  #                 id(current_track).publish_state("");
+  #                 id(current_artwork).publish_state("");
+  #               }
+
+  #               // ---- NEXT ----
+  #               if (!q["next_item"].isNull()) {
+  #                 JsonObjectConst mi = q["next_item"]["media_item"];
+
+  #                 std::string artists;
+  #                 for (JsonVariantConst a : mi["artists"].as<JsonArrayConst>()) {
+  #                   if (!artists.empty()) artists += " / ";
+  #                   artists += a["name"].as<std::string>();
+  #                 }
+  #                 id(next_artist).publish_state(artists);
+  #                 id(next_track).publish_state(mi["name"].as<std::string>());
+
+  #                 std::string art;
+  #                 if (!mi["album"]["image"].isNull())
+  #                   art = mi["album"]["image"].as<std::string>();
+  #                 else if (!mi["image"].isNull())
+  #                   art = mi["image"].as<std::string>();
+  #                 id(next_artwork).publish_state(art);
+  #               } else {
+  #                 id(next_artist).publish_state("");
+  #                 id(next_track).publish_state("");
+  #                 id(next_artwork).publish_state("");
+  #               }
+  #         on_error:
+  #           - logger.log: "get_queue action failed"
+
+  # sensors for current and next track info, updated by the above trigger
+  # - platform: template
+  #   id: current_artist
+  #   name: "Current Artist"
+  #   on_value:
+  #     then:
+  #       - lvgl.label.update:
+  #           id: label_current_artist
+  #           text: !lambda 'return x;'
+  # - platform: template
+  #   id: current_track
+  #   name: "Current Track"
+  #   on_value:
+  #     then:
+  #       - lvgl.label.update:
+  #           id: label_current_track
+  #           text: !lambda 'return x;'
+  # - platform: template
+  #   id: current_artwork
+  #   name: "Current Artwork"
+  #   on_value:
+  #     then:
+  #       - if:
+  #           condition:
+  #             lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+  #           then:
+  #             - lvgl.widget.hide: image_current_album
+  #             - online_image.set_url:
+  #                 id: current_album_img
+  #                 url: !lambda 'return x;'
+  #             # - component.update: current_album_img
+  #           else:
+  #             - lvgl.widget.hide: image_current_album
+  # - platform: template
+  #   id: next_artist
+  #   name: "Next Artist"
+  #   on_value:
+  #     then:
+  #       - lvgl.label.update:
+  #           id: label_next_artist
+  #           text: !lambda 'return x;'
+  # - platform: template
+  #   id: next_track
+  #   name: "Next Track"
+  #   on_value:
+  #     then:
+  #       - lvgl.label.update:
+  #           id: label_next_track
+  #           text: !lambda 'return x;'
+  # - platform: template
+  #   id: next_artwork
+  #   name: "Next Artwork"
+    # on_value:
+    #   then:
+    #     - if:
+    #         condition:
+    #           lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+    #         then:
+    #           - lvgl.widget.hide: image_next_album
+    #           - online_image.set_url:
+    #               id: next_album_img
+    #               url: !lambda 'return x;'
+    #           # - component.update: next_album_img
+    #         else:
+    #           - lvgl.widget.hide: image_next_album
 
 online_image:
   - id: current_album_img
@@ -1024,22 +1150,23 @@ online_image:
             id: image_current_album
             src: current_album_img
         - lvgl.widget.show: image_current_album
-  - id: next_album_img
-    type: RGB565
-    url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
-    format: jpg
-    # update_interval: never
-    resize: 200x200
-    on_download_finished:
-      then:
-        - lvgl.image.update:
-            id: image_next_album
-            src: next_album_img
-        - lvgl.widget.show: image_next_album
+  # - id: next_album_img
+  #   type: RGB565
+  #   url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
+  #   format: jpg
+  #   # update_interval: never
+  #   resize: 200x200
+  #   on_download_finished:
+  #     then:
+  #       - lvgl.image.update:
+  #           id: image_next_album
+  #           src: next_album_img
+  #       - lvgl.widget.show: image_next_album
 
 lvgl:
   byte_order: little_endian
   rotation: 90
+  buffer_size: 20% # test to fix crashes
   # disp_bg_color: black
   theme:
     dark_mode: true
@@ -1075,6 +1202,11 @@ lvgl:
     - id: icon_xlarge_style
       text_font: material_icons_250
       text_color: white
+    - id: button_style
+      width: 80
+      height: 80
+      radius: 40
+      text_font: material_icons_60
   # bottom_layer:
   #   bg_color: black
   top_layer:
@@ -1169,21 +1301,28 @@ lvgl:
       widgets:
       # TO DO limit width of text fields (truncated with ... or scrolling)
         # current album
-        - label:
-            id: label_current_album_artist
-            text: "Current Album Artist"
-            align: TOP_MID
-            text_align: CENTER
-            styles: [sans_large_style]
-        - label:
-            id: label_current_album_name
-            text: "Current Album Name"
-            align_to:
-              id: label_current_album_artist
-              align: OUT_BOTTOM_MID
-              y: 10
-            text_align: CENTER
-            styles: [sans_large_style]
+        # - obj:
+        #     id: current_album_container
+        #     width: 400
+        #     height: SIZE_CONTENT
+        #     align: TOP_MID
+        #     layout: vertical
+        #     widgets:
+        #       - label:
+        #           id: label_current_album_artist
+        #           text: "Current Album Artist"
+        #           # align: TOP_MID
+        #           text_align: CENTER
+        #           styles: [sans_large_style]
+        #       - label:
+        #           id: label_current_album_name
+        #           text: "Current Album Name"
+        #           # align_to:
+        #           #   id: label_current_album_artist
+        #           #   align: OUT_BOTTOM_MID
+        #           #   y: 10
+        #           text_align: CENTER
+        #           styles: [sans_large_style]
         # current album artwork and track on the left
         - image:
             id: image_current_album
@@ -1210,65 +1349,78 @@ lvgl:
               x: 20
             styles: [sans_large_style]
         - label:
-            id: label_current_artist
-            text: "Current Artist"
+            id: label_current_album_name
+            text: "Current Album Name"
             align_to:
               id: label_current_track
               align: OUT_TOP_LEFT
               y: -10
             styles: [sans_large_style]
+        - label:
+            id: label_current_album_artist
+            text: "Current Album Artist"
+            align_to:
+              id: label_current_album_name
+              align: OUT_TOP_LEFT
+              y: -10
+            styles: [sans_large_style]
+        # - label:
+        #     id: label_current_artist
+        #     text: "Current Artist"
+        #     align_to:
+        #       id: label_current_track
+        #       align: OUT_TOP_LEFT
+        #       y: -10
+        #     styles: [sans_large_style]
         # next album artwork and track on the right
-        - image:
-            id: image_next_album
-            src: next_album_img
-            width: 200
-            height: 200
-            align: RIGHT_MID
-            y: -100
-            radius: 8
-            hidden: true
-        - label:
-            id: label_next
-            text: "Next Track"
-            align_to:
-              id: image_next_album
-              align: OUT_TOP_RIGHT
-              y: -10
-            text_align: RIGHT
-            styles: [mono_small_style]
-        - label:
-            id: label_next_track
-            text: "Next Track"
-            align_to:
-              id: image_next_album
-              align: OUT_LEFT_BOTTOM
-              x: -20
-            text_align: RIGHT
-            styles: [sans_large_style]
-        - label:
-            id: label_next_artist
-            text: "Next Artist"
-            align_to:
-              id: label_next_track
-              align: OUT_TOP_RIGHT
-              y: -10
-            text_align: RIGHT
-            styles: [sans_large_style]
+        # - image:
+        #     id: image_next_album
+        #     src: next_album_img
+        #     width: 200
+        #     height: 200
+        #     align: RIGHT_MID
+        #     y: -100
+        #     radius: 8
+        #     hidden: true
+        # - label:
+        #     id: label_next
+        #     text: "Next Track"
+        #     align_to:
+        #       id: image_next_album
+        #       align: OUT_TOP_RIGHT
+        #       y: -10
+        #     text_align: RIGHT
+        #     styles: [mono_small_style]
+        # - label:
+        #     id: label_next_track
+        #     text: "Next Track"
+        #     align_to:
+        #       id: image_next_album
+        #       align: OUT_LEFT_BOTTOM
+        #       x: -20
+        #     text_align: RIGHT
+        #     styles: [sans_large_style]
+        # - label:
+        #     id: label_next_artist
+        #     text: "Next Artist"
+        #     align_to:
+        #       id: label_next_track
+        #       align: OUT_TOP_RIGHT
+        #       y: -10
+        #     text_align: RIGHT
+        #     styles: [sans_large_style]
         # player controls
         - button:
             id: button_play
             align: BOTTOM_MID
-            # y: -30
-            width: 80
-            height: 80
-            radius: 40
             bg_color: ${highlight_color}
+            styles: [button_style]
             widgets:
               - label:
                   align: CENTER
                   id: label_button_play
                   text: "\ue037"
-                  styles: [icon_large_style]
+                  # styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_play_pause
@@ -1281,12 +1433,13 @@ lvgl:
               align: OUT_LEFT_MID
               x: -40
             bg_opa: TRANSP
+            styles: [button_style]
             widgets:
               - label:
                   align: CENTER
                   id: label_button_previous
                   text: "\ue045"
-                  styles: [icon_large_style]
+                  # styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_previous_track
@@ -1299,12 +1452,13 @@ lvgl:
               align: OUT_RIGHT_MID
               x: 40
             bg_opa: TRANSP
+            styles: [button_style]
             widgets:
               - label:
                   align: CENTER
                   id: label_button_next
                   text: "\ue044"
-                  styles: [icon_large_style]
+                  # styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_next_track
@@ -1319,7 +1473,7 @@ lvgl:
             checkable: true
             bg_opa: TRANSP
             text_color: 0x666666
-            styles: [icon_large_style]
+            styles: [button_style]
             checked:
               bg_opa: TRANSP
               text_color: ${highlight_color}
@@ -1341,13 +1495,14 @@ lvgl:
               align: OUT_RIGHT_MID
               x: 40
             bg_opa: TRANSP
+            styles: [button_style]
             widgets:
               - label:
                   align: CENTER
                   id: label_button_repeat
                   text: "\ue040"
                   text_color: 0x666666
-                  styles: [icon_large_style]
+                  # styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.repeat_set
@@ -1360,11 +1515,10 @@ lvgl:
         - button:
             id: button_external_speaker
             align: BOTTOM_RIGHT
-            # y: -30
             checkable: true
             bg_opa: TRANSP
             text_color: 0x666666
-            styles: [icon_large_style]
+            styles: [button_style]
             checked:
               bg_opa: TRANSP
               text_color: ${highlight_color}
@@ -1373,6 +1527,15 @@ lvgl:
                   align: CENTER
                   id: label_button_external_speaker
                   text: "\ue32d"
+        - bar:
+            id: bar_track_progress
+            width: 1000
+            height: 10
+            value: 0
+            align_to:
+              id: button_play
+              align: OUT_TOP_MID
+              y: -30
   on_idle:
     timeout: 30s
     then:
