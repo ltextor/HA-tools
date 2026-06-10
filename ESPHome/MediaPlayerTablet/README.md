@@ -26,7 +26,8 @@ mode: restart
 ## Necessary Home Assistant Helpers
 
 Template Sensor necessary because fallback to media_artist when media_album_artist is unavailable is not possible in ESPHome:
-```
+
+```yaml
 # In Home Assistant - configuration.yaml or template sensor
 template:
   - sensor:

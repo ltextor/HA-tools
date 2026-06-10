@@ -967,7 +967,7 @@ text_sensor:
       then:
         - lvgl.label.update:
             id: label_current_album_name
-            text: !lambda 'return x;'
+            text: !lambda return x;
 
   - platform: homeassistant
     id: current_album_artist
@@ -986,7 +986,7 @@ text_sensor:
       then:
         - lvgl.label.update:
             id: label_current_track
-            text: !lambda 'return x;'
+            text: !lambda return x;
 
   - platform: homeassistant
     id: current_album_artwork
@@ -1165,8 +1165,8 @@ online_image:
 
 lvgl:
   byte_order: little_endian
-  rotation: 90
-  buffer_size: 20% # test to fix crashes
+  # rotation: 90
+  # buffer_size: 20% # test to fix crashes
   # disp_bg_color: black
   theme:
     dark_mode: true
@@ -1207,8 +1207,6 @@ lvgl:
       height: 80
       radius: 40
       text_font: material_icons_60
-  # bottom_layer:
-  #   bg_color: black
   top_layer:
     # bg_opa: TRANSP
     pad_top: 10
@@ -1221,20 +1219,17 @@ lvgl:
           text: "0:00"
           styles: [mono_small_style]
           align: TOP_LEFT
-          # x: 10
       - label:
           id: label_wifi_status
           text: "\ue63e" # wifi 3 bar (initial state)
           styles: [icon_small_style]
           align: TOP_RIGHT
-          # x: -10
           hidden: true
       - label:
           id: label_notconnected
           text: "\ue648" # not connected
           styles: [icon_small_style]
           align: TOP_RIGHT
-          # x: -10
       - label:
           id: label_battery_status
           text: "\uf302" # battery unknown (initial state, before voltage is read)
@@ -1258,7 +1253,7 @@ lvgl:
       - obj:
           id: overlay_volume
           hidden: true
-          width: 670
+          width: 600
           height: SIZE_CONTENT
           align: CENTER
           bg_opa: 90%
@@ -1271,7 +1266,7 @@ lvgl:
                 align: LEFT_MID
             - bar:
                 id: bar_volume
-                width: 550
+                width: 480
                 height: 30
                 value: 0
                 align: RIGHT_MID
@@ -1293,122 +1288,55 @@ lvgl:
     - id: page_artist
       widgets:
         - label:
-            text: "No Artist Playing"
+            text: "Show Artist Albums"
             align: CENTER
             styles: [mono_large_style]
     - id: page_player
       pad_all: 20
       widgets:
       # TO DO limit width of text fields (truncated with ... or scrolling)
-        # current album
-        # - obj:
-        #     id: current_album_container
-        #     width: 400
-        #     height: SIZE_CONTENT
-        #     align: TOP_MID
-        #     layout: vertical
-        #     widgets:
-        #       - label:
-        #           id: label_current_album_artist
-        #           text: "Current Album Artist"
-        #           # align: TOP_MID
-        #           text_align: CENTER
-        #           styles: [sans_large_style]
-        #       - label:
-        #           id: label_current_album_name
-        #           text: "Current Album Name"
-        #           # align_to:
-        #           #   id: label_current_album_artist
-        #           #   align: OUT_BOTTOM_MID
-        #           #   y: 10
-        #           text_align: CENTER
-        #           styles: [sans_large_style]
-        # current album artwork and track on the left
+      # show album artwork with artist, album title and track title
         - image:
             id: image_current_album
             src: current_album_img
             width: 400
             height: 400
-            align: LEFT_MID
+            align: CENTER
             radius: 8
             hidden: true
         - label:
-            id: label_current
-            text: "Current Track"
-            align_to:
-              id: image_current_album
-              align: OUT_TOP_LEFT
-              y: -10
-            styles: [mono_small_style]
-        - label:
-            id: label_current_track
-            text: "Current Track"
-            align_to:
-              id: image_current_album
-              align: OUT_RIGHT_BOTTOM
-              x: 20
-            styles: [sans_large_style]
-        - label:
             id: label_current_album_name
             text: "Current Album Name"
+            width: 100%
+            long_mode: SCROLL_CIRCULAR
             align_to:
-              id: label_current_track
-              align: OUT_TOP_LEFT
-              y: -10
+              id: image_current_album
+              align: OUT_TOP_MID
+              y: -20
+            text_align: CENTER
             styles: [sans_large_style]
         - label:
             id: label_current_album_artist
             text: "Current Album Artist"
+            width: 100%
+            long_mode: SCROLL_CIRCULAR
             align_to:
-              id: label_current_album_name
-              align: OUT_TOP_LEFT
-              y: -10
+              id: image_current_album
+              align: OUT_TOP_MID
+              y: -70
+            text_align: CENTER
             styles: [sans_large_style]
-        # - label:
-        #     id: label_current_artist
-        #     text: "Current Artist"
-        #     align_to:
-        #       id: label_current_track
-        #       align: OUT_TOP_LEFT
-        #       y: -10
-        #     styles: [sans_large_style]
-        # next album artwork and track on the right
-        # - image:
-        #     id: image_next_album
-        #     src: next_album_img
-        #     width: 200
-        #     height: 200
-        #     align: RIGHT_MID
-        #     y: -100
-        #     radius: 8
-        #     hidden: true
-        # - label:
-        #     id: label_next
-        #     text: "Next Track"
-        #     align_to:
-        #       id: image_next_album
-        #       align: OUT_TOP_RIGHT
-        #       y: -10
-        #     text_align: RIGHT
-        #     styles: [mono_small_style]
-        # - label:
-        #     id: label_next_track
-        #     text: "Next Track"
-        #     align_to:
-        #       id: image_next_album
-        #       align: OUT_LEFT_BOTTOM
-        #       x: -20
-        #     text_align: RIGHT
-        #     styles: [sans_large_style]
-        # - label:
-        #     id: label_next_artist
-        #     text: "Next Artist"
-        #     align_to:
-        #       id: label_next_track
-        #       align: OUT_TOP_RIGHT
-        #       y: -10
-        #     text_align: RIGHT
-        #     styles: [sans_large_style]
+        - label:
+            id: label_current_track
+            text: "Current Track"
+            width: 100%
+            long_mode: SCROLL_CIRCULAR
+            align_to:
+              id: image_current_album
+              align: OUT_BOTTOM_MID
+              y: 20
+            text_align: CENTER
+            styles: [sans_large_style]
         # player controls
         - button:
             id: button_play
@@ -1420,7 +1348,6 @@ lvgl:
                   align: CENTER
                   id: label_button_play
                   text: "\ue037"
-                  # styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_play_pause
@@ -1431,7 +1358,7 @@ lvgl:
             align_to:
               id: button_play
               align: OUT_LEFT_MID
-              x: -40
+              x: -30
             bg_opa: TRANSP
             styles: [button_style]
             widgets:
@@ -1439,7 +1366,6 @@ lvgl:
                   align: CENTER
                   id: label_button_previous
                   text: "\ue045"
-                  # styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_previous_track
@@ -1450,7 +1376,7 @@ lvgl:
             align_to:
               id: button_play
               align: OUT_RIGHT_MID
-              x: 40
+              x: 30
             bg_opa: TRANSP
             styles: [button_style]
             widgets:
@@ -1458,7 +1384,6 @@ lvgl:
                   align: CENTER
                   id: label_button_next
                   text: "\ue044"
-                  # styles: [icon_large_style]
             on_click:
               - homeassistant.action:
                   action: media_player.media_next_track
@@ -1469,7 +1394,7 @@ lvgl:
             align_to:
               id: button_previous
               align: OUT_LEFT_MID
-              x: -40
+              x: -30
             checkable: true
             bg_opa: TRANSP
             text_color: 0x666666
@@ -1493,7 +1418,7 @@ lvgl:
             align_to:
               id: button_next
               align: OUT_RIGHT_MID
-              x: 40
+              x: 30
             bg_opa: TRANSP
             styles: [button_style]
             widgets:
@@ -1529,7 +1454,7 @@ lvgl:
                   text: "\ue32d"
         - bar:
             id: bar_track_progress
-            width: 1000
+            width: 100%
             height: 10
             value: 0
             align_to:
