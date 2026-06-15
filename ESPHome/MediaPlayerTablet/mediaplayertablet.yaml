@@ -245,6 +245,7 @@ api:
                   id(album_titles).clear();
                   id(album_ids).clear();
                   id(album_images).clear();
+              - lvgl.widget.show: button_artist # show back to artist page button on player page
               - homeassistant.action:
                   action: media_player.browse_media
                   data:
@@ -867,7 +868,7 @@ rc522_i2c:
           animation: FADE_IN
           time: 500ms
       - delay: 800ms
-      - lvgl.widget.hide: [image_current_album, image_browse_album]
+      - lvgl.widget.hide: [image_current_album, image_browse_album, button_artist]
 
 # M5Stack unit scroll
 external_components:
@@ -919,6 +920,7 @@ font:
       - "\ue034" # pause
       - "\ue045" # previous
       - "\ue044" # next
+      - "\ue030" # music library
   - file: "gfonts://Material Symbols Outlined"
     id: material_icons_250
     size: 250
@@ -1134,131 +1136,7 @@ text_sensor:
   #   entity_id: ${media_player_entity}
   #   attribute: media_content_id
   #   on_value:
-  #     - delay: 500ms # test to fix crashes
-  #     - homeassistant.action:
-  #         action: music_assistant.get_queue
-  #         data:
-  #           entity_id: ${media_player_entity}
-  #         capture_response: true
-  #         on_success:
-  #           - lambda: |-
-  #               JsonObjectConst q = response["response"]["${media_player_entity}"];
-
-  #               // ---- CURRENT ----
-  #               if (!q["current_item"].isNull()) {
-  #                 JsonObjectConst mi = q["current_item"]["media_item"];
-
-  #                 std::string artists;
-  #                 for (JsonVariantConst a : mi["artists"].as<JsonArrayConst>()) {
-  #                   if (!artists.empty()) artists += " / ";
-  #                   artists += a["name"].as<std::string>();
-  #                 }
-  #                 id(current_artist).publish_state(artists);
-  #                 id(current_track).publish_state(mi["name"].as<std::string>());
-
-  #                 std::string art;
-  #                 if (!mi["album"]["image"].isNull())
-  #                   art = mi["album"]["image"].as<std::string>();
-  #                 else if (!mi["image"].isNull())
-  #                   art = mi["image"].as<std::string>();
-  #                 id(current_artwork).publish_state(art);
-  #               } else {
-  #                 id(current_artist).publish_state("");
-  #                 id(current_track).publish_state("");
-  #                 id(current_artwork).publish_state("");
-  #               }
-
-  #               // ---- NEXT ----
-  #               if (!q["next_item"].isNull()) {
-  #                 JsonObjectConst mi = q["next_item"]["media_item"];
-
-  #                 std::string artists;
-  #                 for (JsonVariantConst a : mi["artists"].as<JsonArrayConst>()) {
-  #                   if (!artists.empty()) artists += " / ";
-  #                   artists += a["name"].as<std::string>();
-  #                 }
-  #                 id(next_artist).publish_state(artists);
-  #                 id(next_track).publish_state(mi["name"].as<std::string>());
-
-  #                 std::string art;
-  #                 if (!mi["album"]["image"].isNull())
-  #                   art = mi["album"]["image"].as<std::string>();
-  #                 else if (!mi["image"].isNull())
-  #                   art = mi["image"].as<std::string>();
-  #                 id(next_artwork).publish_state(art);
-  #               } else {
-  #                 id(next_artist).publish_state("");
-  #                 id(next_track).publish_state("");
-  #                 id(next_artwork).publish_state("");
-  #               }
-  #         on_error:
-  #           - logger.log: "get_queue action failed"
-
-  # sensors for current and next track info, updated by the above trigger
-  # - platform: template
-  #   id: current_artist
-  #   name: "Current Artist"
-  #   on_value:
-  #     then:
-  #       - lvgl.label.update:
-  #           id: label_current_artist
-  #           text: !lambda 'return x;'
-  # - platform: template
-  #   id: current_track
-  #   name: "Current Track"
-  #   on_value:
-  #     then:
-  #       - lvgl.label.update:
-  #           id: label_current_track
-  #           text: !lambda 'return x;'
-  # - platform: template
-  #   id: current_artwork
-  #   name: "Current Artwork"
-  #   on_value:
-  #     then:
-  #       - if:
-  #           condition:
-  #             lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
-  #           then:
-  #             - lvgl.widget.hide: image_current_album
-  #             - online_image.set_url:
-  #                 id: album_img
-  #                 url: !lambda 'return x;'
-  #             # - component.update: album_img
-  #           else:
-  #             - lvgl.widget.hide: image_current_album
-  # - platform: template
-  #   id: next_artist
-  #   name: "Next Artist"
-  #   on_value:
-  #     then:
-  #       - lvgl.label.update:
-  #           id: label_next_artist
-  #           text: !lambda 'return x;'
-  # - platform: template
-  #   id: next_track
-  #   name: "Next Track"
-  #   on_value:
-  #     then:
-  #       - lvgl.label.update:
-  #           id: label_next_track
-  #           text: !lambda 'return x;'
-  # - platform: template
-  #   id: next_artwork
-  #   name: "Next Artwork"
-    # on_value:
-    #   then:
-    #     - if:
-    #         condition:
-    #           lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
-    #         then:
-    #           - lvgl.widget.hide: image_next_album
-    #           - online_image.set_url:
-    #               id: next_album_img
-    #               url: !lambda 'return x;'
-    #           # - component.update: next_album_img
-    #         else:
-    #           - lvgl.widget.hide: image_next_album
+  # > stop and go to sleep when timer is 0
 
 interval:
   - interval: 1s
@@ -1295,18 +1173,6 @@ online_image:
                   id: image_current_album
                   src: album_img
               - lvgl.widget.show: image_current_album
-  # - id: next_album_img
-  #   type: RGB565
-  #   url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
-  #   format: jpg
-  #   # update_interval: never
-  #   resize: 200x200
-  #   on_download_finished:
-  #     then:
-  #       - lvgl.image.update:
-  #           id: image_next_album
-  #           src: next_album_img
-  #       - lvgl.widget.show: image_next_album
 
 lvgl:
   byte_order: little_endian
@@ -1715,6 +1581,29 @@ lvgl:
               id: button_play
               align: OUT_TOP_MID
               y: -50
+        - button:
+            id: button_artist
+            hidden: true
+            align: TOP_LEFT
+            x: 30
+            y: 30
+            bg_opa: TRANSP
+            styles: [button_style]
+            widgets:
+              - label:
+                  align: CENTER
+                  id: label_button_artist
+                  text: "\ue030" # music library
+            on_click:
+              - homeassistant.service:
+                  service: media_player.media_pause
+                  data:
+                    entity_id: ${media_player_entity}
+              - lvgl.page.show:
+                  id: page_artist
+                  animation: FADE_IN
+                  time: 500ms
+
   on_idle:
     timeout: 30s
     then:
