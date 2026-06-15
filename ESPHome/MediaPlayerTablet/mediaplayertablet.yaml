@@ -50,6 +50,7 @@ globals:
     restore_value: false
     initial_value: '0'
 
+  # globals used for browsing artist albums
   - id: current_artist_title
     type: std::string
     restore_value: false
@@ -225,8 +226,7 @@ api:
         then:
           - lvgl.widget.show: label_notconnected
           - lvgl.widget.hide: label_wifi_status
-  # nfc tag is scanned and media id is passed to device > show album or player page
-  # optional todo: show rfid scanning overlay for 3s
+  # nfc tag is scanned and media id is passed to device > show artist or player page
   services:
     - service: play_nfc_media
       variables:
@@ -237,17 +237,45 @@ api:
               lambda: 'return media_id.find("artist") != std::string::npos;'
             then:
               # artist rfid card
+              # TO DO show loading overlay if album loading takes too long
+              - globals.set:
+                  id: album_index
+                  value: '0'
+              - lambda: |-
+                  id(album_titles).clear();
+                  id(album_ids).clear();
+                  id(album_images).clear();
+              - homeassistant.action:
+                  action: media_player.browse_media
+                  data:
+                    entity_id: ${media_player_entity}
+                  data_template:
+                    media_content_type: "artist"
+                    media_content_id: !lambda 'return media_id;'
+                  capture_response: true
+                  on_success:
+                    - lambda: |-
+                        if (response.containsKey("title"))
+                          id(current_artist_title) = response["title"].as<std::string>();
+                        if (response.containsKey("children")) {
+                          for (JsonVariantConst child : response["children"].as<JsonArrayConst>()) {
+                            id(album_titles).push_back(child["title"] | "");
+                            id(album_ids).push_back(child["media_content_id"] | "");
+                            id(album_images).push_back(child["thumbnail"] | "");
+                          }
+                          ESP_LOGI("album", "Fetched %d albums for %s",
+                            id(album_titles).size(), id(current_artist_title).c_str());
+                        }
+                    - script.execute: update_album_browse_page
+                  on_error:
+                    - logger.log: "browse_media failed"
+                    - script.execute: update_album_browse_page
               - lvgl.page.show:
                   id: page_artist
                   animation: FADE_IN
                   time: 500ms
-              # - script.execute: fetch_artist_albums
             else:
               # album or playlist rfid card
-              - lvgl.page.show:
-                  id: page_player
-                  animation: FADE_IN
-                  time: 500ms
               - homeassistant.action:
                   action: media_player.play_media
                   data:
@@ -256,6 +284,10 @@ api:
                     media_content_type: music
                   data_template:
                     media_content_id: !lambda 'return media_id;'
+              - lvgl.page.show:
+                  id: page_player
+                  animation: FADE_IN
+                  time: 500ms
 
 ota:
   - platform: esphome
@@ -552,10 +584,14 @@ binary_sensor:
               - lvgl.widget.redraw:
               - light.turn_on: backlight
         - lambda: 'lv_disp_trig_activity(NULL);'  # resets LVGL idle timer
-        - homeassistant.service:
-            service: media_player.media_play_pause
-            data:
-              entity_id: ${media_player_entity}
+        - if:
+            condition:
+              lvgl.page.is_showing: page_player
+            then:
+              - homeassistant.service:
+                  service: media_player.media_play_pause
+                  data:
+                    entity_id: ${media_player_entity}
 
   - platform: status
     name: "Status"
@@ -820,12 +856,18 @@ rc522_i2c:
             - lvgl.widget.redraw:
             - light.turn_on: backlight
       - lambda: 'lv_disp_trig_activity(NULL);'  # resets LVGL idle timer
+      - lambda: |-
+            id(album_titles).clear();
+            id(album_ids).clear();
+            id(album_images).clear();
+            id(current_artist_title) = "";
+            id(album_index) = 0;
       - lvgl.page.show:
           id: page_nfc
           animation: FADE_IN
           time: 500ms
       - delay: 800ms
-      - lvgl.widget.hide: [image_current_album, image_album]
+      - lvgl.widget.hide: [image_current_album, image_browse_album]
 
 # M5Stack unit scroll
 external_components:
@@ -930,6 +972,48 @@ script:
           id: encoder_active
           value: 'false'
 
+  - id: update_album_browse_page
+    mode: restart
+    then:
+      - lvgl.widget.hide: image_browse_album
+      - if:
+          condition:
+            lambda: 'return id(album_titles).empty();'
+          then:
+            - lvgl.label.update:
+                id: label_browse_album_artist
+                text: !lambda 'return id(current_artist_title);'
+            - lvgl.label.update:
+                id: label_browse_album_title
+                text: "No albums found"
+            - lvgl.label.update:
+                id: label_browse_album_counter
+                text: "0 / 0"
+            # TO DO show large "no album found" icon
+            # - online_image.set_url:
+            #     id: album_img
+            #     url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg"
+          else:
+            - lvgl.label.update:
+                id: label_browse_album_artist
+                text: !lambda 'return id(current_artist_title);'
+            - lvgl.label.update:
+                id: label_browse_album_title
+                text: !lambda 'return id(album_titles)[id(album_index)];'
+            - lvgl.label.update:
+                id: label_browse_album_counter
+                text: !lambda |-
+                  char buf[16];
+                  sprintf(buf, "%d / %d", id(album_index) + 1, (int)id(album_titles).size());
+                  return std::string(buf);
+            - if:
+                condition:
+                  lambda: return !id(album_images)[id(album_index)].empty();
+                then:
+                  - online_image.set_url:
+                      id: album_img
+                      url: !lambda 'return id(album_images)[id(album_index)];'
+
 text_sensor:
   # sensor for media player state
   - platform: homeassistant
@@ -1033,11 +1117,13 @@ text_sensor:
       then:
         - if:
             condition:
-              lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+              and:
+                lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+                lvgl.page.is_showing: page_player
             then:
               - lvgl.widget.hide: image_current_album
               - online_image.set_url:
-                  id: current_album_img
+                  id: album_img
                   url: !lambda 'return x;'
             else:
               - lvgl.widget.hide: image_current_album
@@ -1136,9 +1222,9 @@ text_sensor:
   #           then:
   #             - lvgl.widget.hide: image_current_album
   #             - online_image.set_url:
-  #                 id: current_album_img
+  #                 id: album_img
   #                 url: !lambda 'return x;'
-  #             # - component.update: current_album_img
+  #             # - component.update: album_img
   #           else:
   #             - lvgl.widget.hide: image_current_album
   # - platform: template
@@ -1188,7 +1274,7 @@ interval:
                   return (int)(id(last_known_position) + elapsed);
 
 online_image:
-  - id: current_album_img
+  - id: album_img
     type: RGB565
     url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
     format: jpg
@@ -1198,16 +1284,16 @@ online_image:
       then:
         - if:
             condition:
-              # when artist page is currently shown
+              lvgl.page.is_showing: page_artist
             then:
               - lvgl.image.update:
                   id: image_browse_album
-                  src: current_album_img
+                  src: album_img
               - lvgl.widget.show: image_browse_album
             else:
               - lvgl.image.update:
                   id: image_current_album
-                  src: current_album_img
+                  src: album_img
               - lvgl.widget.show: image_current_album
   # - id: next_album_img
   #   type: RGB565
@@ -1349,8 +1435,8 @@ lvgl:
       widgets:
       # show album artwork with artist and album title, page navigation to browse albums
         - image:
-            id: image_album
-            src: current_album_img
+            id: image_browse_album
+            src: album_img
             width: 500
             height: 500
             y: -60
@@ -1358,7 +1444,7 @@ lvgl:
             radius: 8
             hidden: true
         - label:
-            id: label_album_name
+            id: label_browse_album_title
             text: "Album Name"
             width: 100%
             long_mode: SCROLL_CIRCULAR
@@ -1369,7 +1455,7 @@ lvgl:
             text_align: CENTER
             styles: [sans_large_style]
         - label:
-            id: label_album_artist
+            id: label_browse_album_artist
             text: "Album Artist"
             width: 100%
             long_mode: SCROLL_CIRCULAR
@@ -1379,6 +1465,82 @@ lvgl:
               y: -100
             text_align: CENTER
             styles: [sans_large_style]
+        - label:
+            id: label_browse_album_counter
+            text: "0 / 0"
+            text_align: CENTER
+            styles: [mono_small_style]
+            align_to:
+              id: image_browse_album
+              align: OUT_BOTTOM_MID
+              y: 20
+        - button:
+            id: button_album_play
+            align_to:
+              id: label_browse_album_counter
+              align: OUT_BOTTOM_MID
+              y: 20
+            bg_color: ${highlight_color}
+            styles: [button_style]
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\ue037"
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(album_ids).empty();'
+                  then:
+                    - homeassistant.action:
+                        action: media_player.play_media
+                        data:
+                          entity_id: ${media_player_entity}
+                          enqueue: replace
+                          media_content_type: music
+                        data_template:
+                          media_content_id: !lambda 'return id(album_ids)[id(album_index)];'
+                    - lvgl.page.show:
+                        id: page_player
+                        animation: FADE_IN
+                        time: 500ms
+        - button:
+            id: button_album_prev
+            align_to:
+              id: button_album_play
+              align: OUT_LEFT_MID
+              x: -20
+            bg_opa: TRANSP
+            styles: [button_style]
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\ue045"
+            on_click:
+              - globals.set:
+                  id: album_index
+                  value: !lambda |-
+                    int n = id(album_titles).size();
+                    return n == 0 ? 0 : (id(album_index) - 1 + n) % n;
+              - script.execute: update_album_browse_page
+        - button:
+            id: button_album_next
+            align_to:
+              id: button_album_play
+              align: OUT_RIGHT_MID
+              x: 20
+            bg_opa: TRANSP
+            styles: [button_style]
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\ue044"
+            on_click:
+              - globals.set:
+                  id: album_index
+                  value: !lambda |-
+                    int n = id(album_titles).size();
+                    return n == 0 ? 0 : (id(album_index) + 1) % n;
+              - script.execute: update_album_browse_page
     - id: page_player
       pad_left: 20
       pad_right: 20
@@ -1386,9 +1548,10 @@ lvgl:
       pad_bottom: 50
       widgets:
       # show album artwork with artist, album title and track title
+      # TO DO button to go back to artist page if an artist rfid card is inserted so that another album can be selected (id(current_artist_title) != "")
         - image:
             id: image_current_album
-            src: current_album_img
+            src: album_img
             width: 500
             height: 500
             y: -60
