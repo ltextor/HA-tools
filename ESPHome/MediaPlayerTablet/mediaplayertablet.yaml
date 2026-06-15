@@ -22,7 +22,7 @@ substitutions:
   media_player_entity: "media_player.media_player_tablet_2"  # Music Assistant version of the Home Assistant Media Player (add to Music Assistant manually)
   external_media_player_entity: "media_player.wohnzimmer_3"  # External media player (Music Assistant version) which can be used as external speaker
   album_artist_sensor: "sensor.media_player_tablet_album_artist" # name of the HA sensor which provides the current album artist, used for the album artist fallback logic
-  highlight_color: "0xFF00FF" # highlight color used for buttons, bars etc.
+  highlight_color: "0x53B6AC" # highlight color used for buttons, bars etc.
 
 globals:
   # Tracks the current volume (0.0–1.0). Initialised to -1.0 as a sentinel
@@ -39,6 +39,16 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
+
+  - id: last_known_position
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+
+  - id: position_updated_at
+    type: uint32_t  # millis() timestamp when HA last pushed position
+    restore_value: false
+    initial_value: '0'
 
 esphome:
   name: ${device_name}
@@ -525,18 +535,6 @@ binary_sensor:
             data:
               entity_id: ${media_player_entity}
 
-  # sensor for shuffle
-  - platform: homeassistant
-    id: shuffle_state
-    entity_id: ${media_player_entity}
-    attribute: shuffle
-    on_state:
-      then:
-        - lvgl.widget.update:
-            id: button_shuffle
-            state:
-              checked: !lambda return x;
-
   - platform: status
     name: "Status"
 
@@ -698,9 +696,12 @@ sensor:
     attribute: media_position
     on_value:
       then:
-        - lvgl.bar.update:
-            id: bar_track_progress
-            value: !lambda return x;
+        - globals.set:
+            id: last_known_position
+            value: !lambda 'return x;'
+        - globals.set:
+            id: position_updated_at
+            value: !lambda 'return millis();'
 
 # Tab5 built-in battery discharges from full (8.23 V) to shutdown threshold (6.0 V)
   - platform: template
@@ -801,6 +802,8 @@ rc522_i2c:
           id: page_nfc
           animation: FADE_IN
           time: 500ms
+      - delay: 800ms
+      - lvgl.widget.hide: [image_current_album, image_album]
 
 # M5Stack unit scroll
 external_components:
@@ -865,8 +868,8 @@ font:
     bpp: 4
     glyphsets: [GF_Latin_Core]
   - file: "gfonts://JetBrains Mono"
-    id: jetbrains_48
-    size: 48
+    id: jetbrains_36
+    size: 36
     bpp: 4
     glyphsets: [GF_Latin_Core]
   # - file: "gfonts://Manrope"
@@ -927,6 +930,18 @@ text_sensor:
               - lvgl.label.update:
                   id: label_button_play
                   text: "\ue037" # play
+
+  # sensor for shuffle
+  - platform: homeassistant
+    id: shuffle_state
+    entity_id: ${media_player_entity}
+    attribute: shuffle
+    on_value:
+      then:
+        - lvgl.widget.update:
+            id: button_shuffle
+            state:
+              checked: !lambda 'return (x == "True" || x == "true" || x == "on");'
 
   # sensor for repeat
   - platform: homeassistant
@@ -1137,13 +1152,26 @@ text_sensor:
     #         else:
     #           - lvgl.widget.hide: image_next_album
 
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(media_player_state).state == "playing";'
+          then:
+            - lvgl.bar.update:
+                id: bar_track_progress
+                value: !lambda |-
+                  float elapsed = (millis() - id(position_updated_at)) / 1000.0f;
+                  return (int)(id(last_known_position) + elapsed);
+
 online_image:
   - id: current_album_img
     type: RGB565
     url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
     format: jpg
     # update_interval: never
-    resize: 400x400
+    resize: 500x500
     on_download_finished:
       then:
         - lvgl.image.update:
@@ -1182,7 +1210,7 @@ lvgl:
       text_font: jetbrains_24
       text_color: white
     - id: mono_large_style
-      text_font: jetbrains_48
+      text_font: jetbrains_36
       text_color: white
     # - id: sans_small_style
     #   text_font: manrope_24
@@ -1201,7 +1229,7 @@ lvgl:
       text_color: white
     - id: icon_xlarge_style
       text_font: material_icons_250
-      text_color: white
+      text_color: ${highlight_color}
     - id: button_style
       width: 80
       height: 80
@@ -1238,7 +1266,7 @@ lvgl:
             id: label_wifi_status
             align: OUT_LEFT_MID
             x: -20
-            y: 4
+            y: 2
       - label:
           id: label_battery_charging
           text: "\uf305" # battery charging
@@ -1247,7 +1275,7 @@ lvgl:
             id: label_wifi_status
             align: OUT_LEFT_MID
             x: -20
-            y: 4
+            y: 2
           hidden: true
       # ----- VOLUME OVERLAY -----
       - obj:
@@ -1286,21 +1314,53 @@ lvgl:
               align: OUT_BOTTOM_MID
               y: 10
     - id: page_artist
-      widgets:
-        - label:
-            text: "Show Artist Albums"
-            align: CENTER
-            styles: [mono_large_style]
-    - id: page_player
       pad_all: 20
       widgets:
-      # TO DO limit width of text fields (truncated with ... or scrolling)
+      # show album artwork with artist and album title, page navigation to browse albums
+        - image:
+            id: image_album
+            src: current_album_img
+            width: 500
+            height: 500
+            y: -60
+            align: CENTER
+            radius: 8
+            hidden: true
+        - label:
+            id: label_album_name
+            text: "Album Name"
+            width: 100%
+            long_mode: SCROLL_CIRCULAR
+            align_to:
+              id: image_album
+              align: OUT_TOP_MID
+              y: -50
+            text_align: CENTER
+            styles: [sans_large_style]
+        - label:
+            id: label_album_artist
+            text: "Album Artist"
+            width: 100%
+            long_mode: SCROLL_CIRCULAR
+            align_to:
+              id: image_album
+              align: OUT_TOP_MID
+              y: -100
+            text_align: CENTER
+            styles: [sans_large_style]
+    - id: page_player
+      pad_left: 20
+      pad_right: 20
+      pad_top: 20
+      pad_bottom: 50
+      widgets:
       # show album artwork with artist, album title and track title
         - image:
             id: image_current_album
             src: current_album_img
-            width: 400
-            height: 400
+            width: 500
+            height: 500
+            y: -60
             align: CENTER
             radius: 8
             hidden: true
@@ -1312,7 +1372,7 @@ lvgl:
             align_to:
               id: image_current_album
               align: OUT_TOP_MID
-              y: -20
+              y: -50
             text_align: CENTER
             styles: [sans_large_style]
         - label:
@@ -1323,7 +1383,7 @@ lvgl:
             align_to:
               id: image_current_album
               align: OUT_TOP_MID
-              y: -70
+              y: -100
             text_align: CENTER
             styles: [sans_large_style]
         - label:
@@ -1334,7 +1394,7 @@ lvgl:
             align_to:
               id: image_current_album
               align: OUT_BOTTOM_MID
-              y: 20
+              y: 50
             text_align: CENTER
             styles: [sans_large_style]
         # player controls
@@ -1358,7 +1418,7 @@ lvgl:
             align_to:
               id: button_play
               align: OUT_LEFT_MID
-              x: -30
+              x: -20
             bg_opa: TRANSP
             styles: [button_style]
             widgets:
@@ -1376,7 +1436,7 @@ lvgl:
             align_to:
               id: button_play
               align: OUT_RIGHT_MID
-              x: 30
+              x: 20
             bg_opa: TRANSP
             styles: [button_style]
             widgets:
@@ -1394,7 +1454,7 @@ lvgl:
             align_to:
               id: button_previous
               align: OUT_LEFT_MID
-              x: -30
+              x: -18
             checkable: true
             bg_opa: TRANSP
             text_color: 0x666666
@@ -1418,7 +1478,7 @@ lvgl:
             align_to:
               id: button_next
               align: OUT_RIGHT_MID
-              x: 30
+              x: 18
             bg_opa: TRANSP
             styles: [button_style]
             widgets:
@@ -1460,7 +1520,7 @@ lvgl:
             align_to:
               id: button_play
               align: OUT_TOP_MID
-              y: -30
+              y: -50
   on_idle:
     timeout: 30s
     then:
