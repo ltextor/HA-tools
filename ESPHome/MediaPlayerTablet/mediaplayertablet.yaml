@@ -50,6 +50,28 @@ globals:
     restore_value: false
     initial_value: '0'
 
+  - id: current_artist_title
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  - id: album_index
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  - id: album_titles
+    type: std::vector<std::string>
+    restore_value: false
+
+  - id: album_ids
+    type: std::vector<std::string>
+    restore_value: false
+
+  - id: album_images
+    type: std::vector<std::string>
+    restore_value: false
+
 esphome:
   name: ${device_name}
   friendly_name: ${device_friendly_name}
@@ -1174,10 +1196,19 @@ online_image:
     resize: 500x500
     on_download_finished:
       then:
-        - lvgl.image.update:
-            id: image_current_album
-            src: current_album_img
-        - lvgl.widget.show: image_current_album
+        - if:
+            condition:
+              # when artist page is currently shown
+            then:
+              - lvgl.image.update:
+                  id: image_browse_album
+                  src: current_album_img
+              - lvgl.widget.show: image_browse_album
+            else:
+              - lvgl.image.update:
+                  id: image_current_album
+                  src: current_album_img
+              - lvgl.widget.show: image_current_album
   # - id: next_album_img
   #   type: RGB565
   #   url: "https://upload.wikimedia.org/wikipedia/commons/e/e1/White_Pixel_1x1.jpg" # Valid dummy URL to satisfy compiler and avoid DNS/localhost crashes
