@@ -264,7 +264,7 @@ api:
                             id(album_images).push_back(child["thumbnail"] | "");
                           }
                           ESP_LOGI("album", "Fetched %d albums for %s",
-                            id(album_titles).size(), id(current_artist_title).c_str());
+                            (int)id(album_titles).size(), id(current_artist_title).c_str());
                         }
                     - script.execute: update_album_browse_page
                   on_error:
@@ -1118,8 +1118,8 @@ text_sensor:
         - if:
             condition:
               and:
-                lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
-                lvgl.page.is_showing: page_player
+                - lambda: 'return x.length() > 0 && x != "unknown" && x != "unavailable";'
+                - lvgl.page.is_showing: page_player
             then:
               - lvgl.widget.hide: image_current_album
               - online_image.set_url:
