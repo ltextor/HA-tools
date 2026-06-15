@@ -1065,19 +1065,19 @@ text_sensor:
                   text: "\ue040" # repeat (magenta)
                   text_color: ${highlight_color}
             else:
-              if:
-                condition:
-                  lambda: return (x == "one");
-                then:
-                  - lvgl.label.update:
-                      id: label_button_repeat
-                      text: "\ue041" # repeat_one (magenta)
-                      text_color: ${highlight_color}
-                else:
-                  - lvgl.label.update:
-                      id: label_button_repeat
-                      text: "\ue040" # repeat (gray)
-                      text_color: 0x666666
+              - if:
+                  condition:
+                    lambda: return (x == "one");
+                  then:
+                    - lvgl.label.update:
+                        id: label_button_repeat
+                        text: "\ue041" # repeat_one (magenta)
+                        text_color: ${highlight_color}
+                  else:
+                    - lvgl.label.update:
+                        id: label_button_repeat
+                        text: "\ue040" # repeat (gray)
+                        text_color: 0x666666
 
   # sensors for current album name, artist, track and artwork
   - platform: homeassistant
@@ -1449,7 +1449,7 @@ lvgl:
             width: 100%
             long_mode: SCROLL_CIRCULAR
             align_to:
-              id: image_album
+              id: image_browse_album
               align: OUT_TOP_MID
               y: -50
             text_align: CENTER
@@ -1460,7 +1460,7 @@ lvgl:
             width: 100%
             long_mode: SCROLL_CIRCULAR
             align_to:
-              id: image_album
+              id: image_browse_album
               align: OUT_TOP_MID
               y: -100
             text_align: CENTER
