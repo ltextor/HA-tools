@@ -273,7 +273,12 @@ api:
 
                         if (browse["children"].is<JsonArrayConst>()) {
                           for (JsonVariantConst child : browse["children"].as<JsonArrayConst>()) {
-                            id(album_titles).push_back(child["title"] | "");
+                            std::string title = child["title"] | "";
+                            std::string prefix = id(current_artist_title) + " - ";
+                            if (title.rfind(prefix, 0) == 0) {
+                              title = title.substr(prefix.length());
+                            }
+                            id(album_titles).push_back(title);
                             id(album_ids).push_back(child["media_content_id"] | "");
                             id(album_images).push_back(child["thumbnail"] | "");
                           }
@@ -1267,7 +1272,7 @@ lvgl:
             id: label_wifi_status
             align: OUT_LEFT_MID
             x: -20
-            y: 2
+            y: 3
       - label:
           id: label_battery_charging
           text: "\uf305" # battery charging
@@ -1276,7 +1281,7 @@ lvgl:
             id: label_wifi_status
             align: OUT_LEFT_MID
             x: -20
-            y: 2
+            y: 3
           hidden: true
       - label:
           id: label_headphones
