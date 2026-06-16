@@ -250,23 +250,38 @@ api:
                   action: media_player.browse_media
                   data:
                     entity_id: ${media_player_entity}
-                  data_template:
                     media_content_type: "artist"
                     media_content_id: !lambda 'return media_id;'
                   capture_response: true
                   on_success:
                     - lambda: |-
-                        if (response.containsKey("title"))
-                          id(current_artist_title) = response["title"].as<std::string>();
-                        if (response.containsKey("children")) {
-                          for (JsonVariantConst child : response["children"].as<JsonArrayConst>()) {
+                        // unwrap the response envelope -> entity object
+                        JsonObjectConst browse =
+                          response["response"]["${media_player_entity}"].as<JsonObjectConst>();
+
+                        if (browse.isNull()) {
+                          ESP_LOGW("album", "browse object not found under response envelope");
+                          // dump what we did get
+                          for (JsonPairConst kv : response) {
+                            ESP_LOGI("album", "response key: %s", kv.key().c_str());
+                          }
+                          return;
+                        }
+
+                        if (!browse["title"].isNull())
+                          id(current_artist_title) = browse["title"].as<std::string>();
+
+                        if (browse["children"].is<JsonArrayConst>()) {
+                          for (JsonVariantConst child : browse["children"].as<JsonArrayConst>()) {
                             id(album_titles).push_back(child["title"] | "");
                             id(album_ids).push_back(child["media_content_id"] | "");
                             id(album_images).push_back(child["thumbnail"] | "");
                           }
-                          ESP_LOGI("album", "Fetched %d albums for %s",
-                            (int)id(album_titles).size(), id(current_artist_title).c_str());
                         }
+
+                        ESP_LOGI("album", "Fetched %d albums for %s",
+                          (int) id(album_titles).size(),
+                          id(current_artist_title).c_str());
                     - script.execute: update_album_browse_page
                   on_error:
                     - logger.log: "browse_media failed"
@@ -1572,21 +1587,10 @@ lvgl:
                   align: CENTER
                   id: label_button_external_speaker
                   text: "\ue32d"
-        - bar:
-            id: bar_track_progress
-            width: 100%
-            height: 10
-            value: 0
-            align_to:
-              id: button_play
-              align: OUT_TOP_MID
-              y: -50
         - button:
             id: button_artist
             hidden: true
-            align: TOP_LEFT
-            x: 30
-            y: 30
+            align: BOTTOM_LEFT
             bg_opa: TRANSP
             styles: [button_style]
             widgets:
@@ -1603,7 +1607,15 @@ lvgl:
                   id: page_artist
                   animation: FADE_IN
                   time: 500ms
-
+        - bar:
+            id: bar_track_progress
+            width: 100%
+            height: 10
+            value: 0
+            align_to:
+              id: button_play
+              align: OUT_TOP_MID
+              y: -50
   on_idle:
     timeout: 30s
     then:
