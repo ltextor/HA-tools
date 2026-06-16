@@ -22,7 +22,7 @@ substitutions:
   media_player_entity: "media_player.media_player_tablet_2"  # Music Assistant version of the Home Assistant Media Player (add to Music Assistant manually)
   external_media_player_entity: "media_player.wohnzimmer_3"  # External media player (Music Assistant version) which can be used as external speaker
   album_artist_sensor: "sensor.media_player_tablet_album_artist" # name of the HA sensor which provides the current album artist, used for the album artist fallback logic
-  highlight_color: "0x53B6AC" # highlight color used for buttons, bars etc.
+  highlight_color: "0x1CAD9F" # highlight color used for buttons, bars etc.
 
 globals:
   # Tracks the current volume (0.0–1.0). Initialised to -1.0 as a sentinel
