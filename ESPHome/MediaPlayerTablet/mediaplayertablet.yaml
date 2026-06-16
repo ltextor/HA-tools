@@ -1414,7 +1414,6 @@ lvgl:
       pad_bottom: 50
       widgets:
       # show album artwork with artist, album title and track title
-      # TO DO button to go back to artist page if an artist rfid card is inserted so that another album can be selected (id(current_artist_title) != "")
         - image:
             id: image_current_album
             src: album_img
