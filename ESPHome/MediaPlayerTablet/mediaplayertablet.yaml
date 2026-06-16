@@ -582,9 +582,11 @@ binary_sensor:
     on_press:
       then:
         - switch.turn_off: speaker_enable
+        - lvgl.widget.show: label_headphones
     on_release:
       then:
         - switch.turn_on: speaker_enable
+        - lvgl.widget.hide: label_headphones
 
   # M5Stack Unit Scroll
   - platform: m5unit_scroll
@@ -906,6 +908,7 @@ font:
       - "\ue4d9" # wifi 2 bar
       - "\ue63e" # wifi 3 bar
       - "\ue648" # no wifi
+      - "\uf01f" # headphones
   - file: "gfonts://Material Symbols Outlined"
     id: material_icons_48
     size: 48
@@ -1274,6 +1277,15 @@ lvgl:
             align: OUT_LEFT_MID
             x: -20
             y: 2
+          hidden: true
+      - label:
+          id: label_headphones
+          text: "\uf01f" # headphones
+          styles: [icon_small_style]
+          align_to:
+            id: label_battery_status
+            align: OUT_LEFT_MID
+            x: -20
           hidden: true
       # ----- VOLUME OVERLAY -----
       - obj:
