@@ -239,81 +239,86 @@ api:
       then:
         - if:
             condition:
-              lambda: 'return media_id.find("artist") != std::string::npos;'
+              not:
+                lvgl.page.is_showing: page_sleep
             then:
-              # artist rfid card
-              # TO DO show loading overlay if album loading takes too long
-              - globals.set:
-                  id: album_index
-                  value: '0'
-              - lambda: |-
-                  id(album_titles).clear();
-                  id(album_ids).clear();
-                  id(album_images).clear();
-              - lvgl.widget.show: button_artist # show back to artist page button on player page
-              - homeassistant.action:
-                  action: media_player.browse_media
-                  data:
-                    entity_id: ${media_player_entity}
-                    media_content_type: "artist"
-                    media_content_id: !lambda 'return media_id;'
-                  capture_response: true
-                  on_success:
+              - if:
+                  condition:
+                    lambda: 'return media_id.find("artist") != std::string::npos;'
+                  then:
+                    # artist rfid card
+                    # TO DO show loading overlay if album loading takes too long
+                    - globals.set:
+                        id: album_index
+                        value: '0'
                     - lambda: |-
-                        // unwrap the response envelope -> entity object
-                        JsonObjectConst browse =
-                          response["response"]["${media_player_entity}"].as<JsonObjectConst>();
-
-                        if (browse.isNull()) {
-                          ESP_LOGW("album", "browse object not found under response envelope");
-                          // dump what we did get
-                          for (JsonPairConst kv : response) {
-                            ESP_LOGI("album", "response key: %s", kv.key().c_str());
-                          }
-                          return;
-                        }
-
-                        if (!browse["title"].isNull())
-                          id(current_artist_title) = browse["title"].as<std::string>();
-
-                        if (browse["children"].is<JsonArrayConst>()) {
-                          for (JsonVariantConst child : browse["children"].as<JsonArrayConst>()) {
-                            std::string title = child["title"] | "";
-                            std::string prefix = id(current_artist_title) + " - ";
-                            if (title.rfind(prefix, 0) == 0) {
-                              title = title.substr(prefix.length());
-                            }
-                            id(album_titles).push_back(title);
-                            id(album_ids).push_back(child["media_content_id"] | "");
-                            id(album_images).push_back(child["thumbnail"] | "");
-                          }
-                        }
-
-                        ESP_LOGI("album", "Fetched %d albums for %s",
-                          (int) id(album_titles).size(),
-                          id(current_artist_title).c_str());
-                    - script.execute: update_album_browse_page
-                  on_error:
-                    - logger.log: "browse_media failed"
-                    - script.execute: update_album_browse_page
-              - lvgl.page.show:
-                  id: page_artist
-                  animation: FADE_IN
-                  time: 500ms
-            else:
-              # album or playlist rfid card
-              - homeassistant.action:
-                  action: media_player.play_media
-                  data:
-                    entity_id: ${media_player_entity}
-                    enqueue: replace
-                    media_content_type: music
-                  data_template:
-                    media_content_id: !lambda 'return media_id;'
-              - lvgl.page.show:
-                  id: page_player
-                  animation: FADE_IN
-                  time: 500ms
+                        id(album_titles).clear();
+                        id(album_ids).clear();
+                        id(album_images).clear();
+                    - lvgl.widget.show: button_artist # show back to artist page button on player page
+                    - homeassistant.action:
+                        action: media_player.browse_media
+                        data:
+                          entity_id: ${media_player_entity}
+                          media_content_type: "artist"
+                          media_content_id: !lambda 'return media_id;'
+                        capture_response: true
+                        on_success:
+                          - lambda: |-
+                              // unwrap the response envelope -> entity object
+                              JsonObjectConst browse =
+                                response["response"]["${media_player_entity}"].as<JsonObjectConst>();
+      
+                              if (browse.isNull()) {
+                                ESP_LOGW("album", "browse object not found under response envelope");
+                                // dump what we did get
+                                for (JsonPairConst kv : response) {
+                                  ESP_LOGI("album", "response key: %s", kv.key().c_str());
+                                }
+                                return;
+                              }
+      
+                              if (!browse["title"].isNull())
+                                id(current_artist_title) = browse["title"].as<std::string>();
+      
+                              if (browse["children"].is<JsonArrayConst>()) {
+                                for (JsonVariantConst child : browse["children"].as<JsonArrayConst>()) {
+                                  std::string title = child["title"] | "";
+                                  std::string prefix = id(current_artist_title) + " - ";
+                                  if (title.rfind(prefix, 0) == 0) {
+                                    title = title.substr(prefix.length());
+                                  }
+                                  id(album_titles).push_back(title);
+                                  id(album_ids).push_back(child["media_content_id"] | "");
+                                  id(album_images).push_back(child["thumbnail"] | "");
+                                }
+                              }
+      
+                              ESP_LOGI("album", "Fetched %d albums for %s",
+                                (int) id(album_titles).size(),
+                                id(current_artist_title).c_str());
+                          - script.execute: update_album_browse_page
+                        on_error:
+                          - logger.log: "browse_media failed"
+                          - script.execute: update_album_browse_page
+                    - lvgl.page.show:
+                        id: page_artist
+                        animation: FADE_IN
+                        time: 500ms
+                  else:
+                    # album or playlist rfid card
+                    - homeassistant.action:
+                        action: media_player.play_media
+                        data:
+                          entity_id: ${media_player_entity}
+                          enqueue: replace
+                          media_content_type: music
+                        data_template:
+                          media_content_id: !lambda 'return media_id;'
+                    - lvgl.page.show:
+                        id: page_player
+                        animation: FADE_IN
+                        time: 500ms
 
 ota:
   - platform: esphome
@@ -628,6 +633,11 @@ button:
   - platform: restart
     name: "Restart"
 
+  - platform: template
+    id: daily_listening_limit_reset
+    name: "Reset Daily Listening Limit"
+    icon: "mdi:timer-refresh-outline"
+
 # The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
 select:
   - platform: es8388
@@ -890,11 +900,16 @@ rc522_i2c:
             id(album_images).clear();
             id(current_artist_title) = "";
             id(album_index) = 0;
-      - lvgl.page.show:
-          id: page_nfc
-          animation: FADE_IN
-          time: 500ms
-      - delay: 800ms
+      - if:
+          condition:
+            not:
+              lvgl.page.is_showing: page_sleep
+          then:
+            - lvgl.page.show:
+                id: page_nfc
+                animation: FADE_IN
+                time: 500ms
+            - delay: 800ms
       - lvgl.widget.hide: [image_current_album, image_browse_album, button_artist]
 
 # M5Stack unit scroll
@@ -1165,6 +1180,19 @@ text_sensor:
   #   attribute: media_content_id
   #   on_value:
   # > stop and go to sleep when timer is 0
+
+number:
+  - platform: template
+    id: daily_listening_limit
+    name: "Daily Listening Limit"
+    icon: "mdi:timer-music-outline"
+    min_value: 0
+    max_value: 1440
+    step: 5
+    unit_of_measurement: "min"
+    initial_value: 0
+    optimistic: true
+    restore_value: true
 
 interval:
   - interval: 1s
@@ -1637,6 +1665,8 @@ lvgl:
               id: button_play
               align: OUT_TOP_MID
               y: -50
+    - id: page_sleep
+      # TO DO
   on_idle:
     timeout: 30s
     then:
