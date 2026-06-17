@@ -623,6 +623,11 @@ button:
   - platform: restart
     name: "Restart"
 
+  - platform: template
+    id: daily_listening_limit_reset
+    name: "Reset Daily Listening Limit"
+    icon: "mdi:timer-refresh-outline"
+
 # The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
 select:
   - platform: es8388
@@ -1165,7 +1170,7 @@ number:
   - platform: template
     id: daily_listening_limit
     name: "Daily Listening Limit"
-    icon: "mdi:timer-outline"
+    icon: "mdi:timer-music-outline"
     min_value: 0
     max_value: 1440
     step: 5
