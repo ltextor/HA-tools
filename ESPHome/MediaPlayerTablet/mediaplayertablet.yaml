@@ -308,6 +308,16 @@ api:
                   else:
                     # album or playlist rfid card
                     - homeassistant.action:
+                        action: media_player.shuffle_set
+                        data:
+                          entity_id: ${media_player_entity}
+                          shuffle: false
+                    - homeassistant.action:
+                        action: media_player.repeat_set
+                        data:
+                          entity_id: ${media_player_entity}
+                          repeat: "off"
+                    - homeassistant.action:
                         action: media_player.play_media
                         data:
                           entity_id: ${media_player_entity}
@@ -508,6 +518,7 @@ time:
     update_interval: never
     timezone: UTC
     on_time:
+      # nightly screen saver for pixel antiburn
       - hours: 1
         minutes: 5
         seconds: 0
@@ -520,6 +531,14 @@ time:
                 - lvgl.widget.redraw:
           - lvgl.pause:
               show_snow: true
+      # reset daily listening time on midnight
+      - hours: 0
+        minutes: 0
+        seconds: 0
+        then:
+          - globals.set:
+              id: remaining_listening_seconds
+              value: !lambda 'return id(daily_listening_limit) * 60;'
 
 switch:
   - platform: gpio
@@ -637,6 +656,15 @@ button:
     id: daily_listening_limit_reset
     name: "Reset Daily Listening Limit"
     icon: "mdi:timer-refresh-outline"
+    on_press:
+      then:
+        - globals.set:
+            id: remaining_listening_seconds
+            value: !lambda 'return id(daily_listening_limit) * 60;'
+        - lvgl.page.show:
+            id: page_nfc
+            animation: FADE_IN
+            time: 500ms
 
 # The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
 select:
@@ -1082,7 +1110,7 @@ text_sensor:
                   id: label_button_play
                   text: "\ue037" # play
 
-  # sensor for shuffle
+  # sensor for shuffle (text sensor instead of binary sensor because otherwise it does not show correctly after boot (timing issue, binary sensor updated only once and too early))
   - platform: homeassistant
     id: shuffle_state
     entity_id: ${media_player_entity}
@@ -1173,13 +1201,23 @@ text_sensor:
             else:
               - lvgl.widget.hide: image_current_album
 
-  # Hidden trigger: watches the media_player track id and refreshes queue sensors on change
-  # - platform: homeassistant
-  #   id: mp_content_id
-  #   entity_id: ${media_player_entity}
-  #   attribute: media_content_id
-  #   on_value:
-  # > stop and go to sleep when timer is 0
+  # trigger for new track playing > go to sleep if daily listening time is over
+  - platform: homeassistant
+    entity_id: ${media_player_entity}
+    attribute: media_content_id
+    on_value:
+      - if:
+          condition:
+            lambda: 'return id(remaining_listening_seconds) <= 0;'
+          then:
+            - homeassistant.service:
+                service: media_player.media_pause
+                data:
+                  entity_id: ${media_player_entity}
+            - lvgl.page.show:
+                id: page_sleep
+                animation: FADE_IN
+                time: 500ms
 
 number:
   - platform: template
@@ -1193,6 +1231,10 @@ number:
     initial_value: 0
     optimistic: true
     restore_value: true
+    on_value:
+      - globals.set:
+          id: remaining_listening_seconds
+          value: !lambda 'return x * 60;'
 
 interval:
   - interval: 1s
@@ -1206,6 +1248,18 @@ interval:
                 value: !lambda |-
                   float elapsed = (millis() - id(position_updated_at)) / 1000.0f;
                   return (int)(id(last_known_position) + elapsed);
+            - lambda: |-
+                id(daily_listening_elapsed_seconds) -= 1;
+                if (id(daily_listening_elapsed_seconds) < 0) id(daily_listening_elapsed_seconds) = 0;
+            - lvgl.label.update:
+                id: label_timer
+                text: !lambda |-
+                  int total = id(daily_listening_elapsed_seconds);
+                  int h = total / 3600;
+                  int m = (total % 3600) / 60;
+                  char buf[6];
+                  snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+                  return std::string(buf);
 
 online_image:
   - id: album_img
@@ -1422,6 +1476,16 @@ lvgl:
                   condition:
                     lambda: 'return !id(album_ids).empty();'
                   then:
+                    - homeassistant.action:
+                        action: media_player.shuffle_set
+                        data:
+                          entity_id: ${media_player_entity}
+                          shuffle: false
+                    - homeassistant.action:
+                        action: media_player.repeat_set
+                        data:
+                          entity_id: ${media_player_entity}
+                          repeat: "off"
                     - homeassistant.action:
                         action: media_player.play_media
                         data:
