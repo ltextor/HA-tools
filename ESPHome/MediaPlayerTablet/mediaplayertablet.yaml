@@ -1161,6 +1161,19 @@ text_sensor:
   #   on_value:
   # > stop and go to sleep when timer is 0
 
+number:
+  - platform: template
+    id: daily_listening_limit
+    name: "Daily Listening Limit"
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 1440
+    step: 5
+    unit_of_measurement: "min"
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+
 interval:
   - interval: 1s
     then:
