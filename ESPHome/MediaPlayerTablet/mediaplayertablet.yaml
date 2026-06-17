@@ -72,6 +72,11 @@ globals:
   - id: album_images
     type: std::vector<std::string>
     restore_value: false
+  
+  # daily listening time
+  - id: remaining_listening_seconds
+    type: int
+    restore_value: true
 
 esphome:
   name: ${device_name}
