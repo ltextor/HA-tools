@@ -311,7 +311,7 @@ api:
                         action: media_player.shuffle_set
                         data:
                           entity_id: ${media_player_entity}
-                          shuffle: false
+                          shuffle: "false"
                     - homeassistant.action:
                         action: media_player.repeat_set
                         data:
@@ -833,13 +833,31 @@ sensor:
     id: battery_percentage
     lambda: |-
       float voltage = id(battery_voltage).state;
-      // Adjust these values based on your battery's actual min/max voltage
-      float min_voltage = 6.0;  // Discharged voltage
-      float max_voltage = 8.23;  // Fully charged voltage
-      float percentage = (voltage - min_voltage) / (max_voltage - min_voltage) * 100.0;
-      if (percentage > 100.0) return 100.0;
-      if (percentage < 0.0) return 0.0;
-      return percentage;
+
+      // Calibrated from measured discharge (8.2 V = 100% -> 6.0 V = 0%).
+      // Voltage breakpoints must be ascending. pct[] is the matching battery %.
+      static const float volts[] = {
+        6.00, 6.13, 6.28, 6.43, 6.58, 6.68, 6.78, 6.88, 6.98,
+        7.08, 7.18, 7.28, 7.38, 7.48, 7.58, 7.63, 7.68, 7.73,
+        7.78, 7.83, 7.88, 7.93, 7.98, 8.03, 8.08, 8.13, 8.18, 8.20
+      };
+      static const float pct[] = {
+        0.0,  0.3,  0.7,  1.1,  2.0,  2.3,  2.9,  3.5,  4.4,
+        5.4,  7.0,  8.9,  12.0, 15.8, 22.0, 26.5, 33.0, 42.6,
+        51.8, 57.3, 60.9, 64.1, 67.6, 76.1, 88.0, 95.1, 98.8, 100.0
+      };
+      const int n = sizeof(volts) / sizeof(volts[0]);
+
+      if (voltage <= volts[0])   return 0.0;
+      if (voltage >= volts[n-1]) return 100.0;
+
+      for (int i = 0; i < n - 1; i++) {
+        if (voltage < volts[i+1]) {
+          float frac = (voltage - volts[i]) / (volts[i+1] - volts[i]);
+          return pct[i] + frac * (pct[i+1] - pct[i]);
+        }
+      }
+      return 100.0;
     update_interval: 60s
     unit_of_measurement: "%"
     accuracy_decimals: 1
@@ -1203,12 +1221,15 @@ text_sensor:
 
   # trigger for new track playing > go to sleep if daily listening time is over
   - platform: homeassistant
+    id: media_content_id
     entity_id: ${media_player_entity}
     attribute: media_content_id
     on_value:
       - if:
           condition:
-            lambda: 'return id(remaining_listening_seconds) <= 0;'
+            and:
+              - lambda: 'return id(daily_listening_limit).state != 0;'
+              - lambda: 'return id(remaining_listening_seconds) <= 0;'
           then:
             - homeassistant.service:
                 service: media_player.media_pause
@@ -1232,9 +1253,16 @@ number:
     optimistic: true
     restore_value: true
     on_value:
-      - globals.set:
-          id: remaining_listening_seconds
-          value: !lambda 'return x * 60;'
+      - if:
+          condition:
+            lambda: 'return id(daily_listening_limit).state != 0;'
+          then:
+            - globals.set:
+                id: remaining_listening_seconds
+                value: !lambda 'return x * 60;'
+            - lvgl.widget.show: label_timer
+          else:
+            - lvgl.widget.hide: label_timer
 
 interval:
   - interval: 1s
@@ -1248,18 +1276,22 @@ interval:
                 value: !lambda |-
                   float elapsed = (millis() - id(position_updated_at)) / 1000.0f;
                   return (int)(id(last_known_position) + elapsed);
-            - lambda: |-
-                id(daily_listening_elapsed_seconds) -= 1;
-                if (id(daily_listening_elapsed_seconds) < 0) id(daily_listening_elapsed_seconds) = 0;
-            - lvgl.label.update:
-                id: label_timer
-                text: !lambda |-
-                  int total = id(daily_listening_elapsed_seconds);
-                  int h = total / 3600;
-                  int m = (total % 3600) / 60;
-                  char buf[6];
-                  snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
-                  return std::string(buf);
+            - if:
+                condition:
+                  lambda: 'return id(daily_listening_limit).state != 0;'
+                then:
+                  - lambda: |-
+                      id(remaining_listening_seconds) -= 1;
+                      if (id(remaining_listening_seconds) < 0) id(remaining_listening_seconds) = 0;
+                  - lvgl.label.update:
+                      id: label_timer
+                      text: !lambda |-
+                        int total = id(remaining_listening_seconds);
+                        int h = total / 3600;
+                        int m = (total % 3600) / 60;
+                        char buf[6];
+                        snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+                        return std::string(buf);
 
 online_image:
   - id: album_img
@@ -1340,6 +1372,7 @@ lvgl:
           text: "0:00"
           styles: [mono_small_style]
           align: TOP_LEFT
+          hidden: true
       - label:
           id: label_wifi_status
           text: "\ue63e" # wifi 3 bar (initial state)
@@ -1480,7 +1513,7 @@ lvgl:
                         action: media_player.shuffle_set
                         data:
                           entity_id: ${media_player_entity}
-                          shuffle: false
+                          shuffle: "false"
                     - homeassistant.action:
                         action: media_player.repeat_set
                         data:
