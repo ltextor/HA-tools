@@ -538,7 +538,7 @@ time:
         then:
           - globals.set:
               id: remaining_listening_seconds
-              value: !lambda 'return id(daily_listening_limit) * 60;'
+              value: !lambda 'return (int)id(daily_listening_limit) * 60;'
 
 switch:
   - platform: gpio
@@ -660,7 +660,7 @@ button:
       then:
         - globals.set:
             id: remaining_listening_seconds
-            value: !lambda 'return id(daily_listening_limit) * 60;'
+            value: !lambda 'return (int)id(daily_listening_limit) * 60;'
         - lvgl.page.show:
             id: page_nfc
             animation: FADE_IN
@@ -1259,7 +1259,7 @@ number:
           then:
             - globals.set:
                 id: remaining_listening_seconds
-                value: !lambda 'return x * 60;'
+                value: !lambda 'return int(x) * 60;'
             - lvgl.widget.show: label_timer
           else:
             - lvgl.widget.hide: label_timer
