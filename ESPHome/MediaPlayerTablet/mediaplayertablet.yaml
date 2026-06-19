@@ -533,13 +533,14 @@ time:
           - lvgl.pause:
               show_snow: true
       # reset daily listening time on midnight
+      # TO DO also run when device was shut off at midnight
       - hours: 0
         minutes: 0
         seconds: 0
         then:
           - globals.set:
               id: remaining_listening_seconds
-              value: !lambda 'return (int)id(daily_listening_limit) * 60;'
+              value: !lambda 'return (int)id(daily_listening_limit).state * 60;'
 
 switch:
   - platform: gpio
@@ -661,7 +662,7 @@ button:
       then:
         - globals.set:
             id: remaining_listening_seconds
-            value: !lambda 'return (int)id(daily_listening_limit) * 60;'
+            value: !lambda 'return (int)id(daily_listening_limit).state * 60;'
         - lvgl.page.show:
             id: page_nfc
             animation: FADE_IN
