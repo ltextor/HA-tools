@@ -1258,6 +1258,10 @@ number:
       - globals.set:
           id: remaining_listening_seconds
           value: !lambda 'return int(x) * 60;'
+        - lvgl.page.show:
+            id: page_nfc
+            animation: FADE_IN
+            time: 500ms
       # - if:
       #     condition:
       #       lambda: 'return (int)id(daily_listening_limit).state != 0;'
